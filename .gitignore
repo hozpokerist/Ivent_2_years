@@ -1,0 +1,14 @@
+*.iml
+.gradle
+.idea
+.kotlin
+app/build
+assets
+build
+.DS_Store
+.env
+debug.keystore
+
+*.iml
+*.iws
+*.ipr
