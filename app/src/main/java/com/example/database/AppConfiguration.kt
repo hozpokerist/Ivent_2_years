@@ -16,7 +16,7 @@ data class AppConfiguration(
     val cycle2RandomRangeSec: Int = 45,
     val cycle3DurationMin: Int = 10,
     val cycle3RandomRangeSec: Int = 60,
-    val targetItemName: String = "Медь",
+    val targetItemName: String = "",
     val priceThreshold: Double = 0.0,
     val usePriceThreshold: Boolean = false, // По умолчанию выключено, чтобы покупать любой лот указанного ресурса
     val isLessThanOperator: Boolean = true,

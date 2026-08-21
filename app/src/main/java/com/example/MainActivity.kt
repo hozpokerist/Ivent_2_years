@@ -380,58 +380,161 @@ fun DashboardTab(
         // Target Settings
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("🎯 Настройка цели и цены", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("🎯 Настройка целей для покупки (Множественный выбор)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                // Super Priority Banner (Gnome, White Shroud, License)
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("⭐", fontSize = 18.sp)
+                        Text(
+                            text = "Супер-приоритет: «Гном», «Белое покрывало», «Лицензия» выкупаются ВСЕГДА при появлении!",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    }
+                }
+
+                // Helper to parse selected targets set
+                val selectedTargets = remember(config.targetItemName) {
+                    config.targetItemName
+                        .split(",", ";", "/")
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                        .toSet()
+                }
+
+                fun toggleTarget(item: String) {
+                    val currentList = config.targetItemName
+                        .split(",", ";", "/")
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                        .toMutableList()
+
+                    val existingIndex = currentList.indexOfFirst { it.equals(item, ignoreCase = true) }
+                    if (existingIndex >= 0) {
+                        currentList.removeAt(existingIndex)
+                    } else {
+                        currentList.add(item)
+                    }
+                    onUpdateConfig(config.copy(targetItemName = currentList.joinToString(", ")))
+                }
 
                 OutlinedTextField(
                     value = config.targetItemName,
                     onValueChange = { onUpdateConfig(config.copy(targetItemName = it)) },
-                    label = { Text("Название предмета / ресурса") },
-                    placeholder = { Text("Например: Медь, Руда, Золото") },
+                    label = { Text("Выбранные дополнительные ресурсы (через запятую)") },
+                    placeholder = { Text("Оставьте пустым, чтобы покупать ТОЛЬКО Гнома/Покрывало/Лицензию") },
                     modifier = Modifier.fillMaxWidth().testTag("input_target_name"),
-                    singleLine = true
+                    singleLine = false,
+                    maxLines = 2,
+                    supportingText = {
+                        Text(
+                            text = if (selectedTargets.isEmpty()) 
+                                "⚡ Сейчас покупаются ТОЛЬКО: Гном, Белое покрывало, Лицензия (остальное игнорируется)"
+                                else "⚡ Выбрано для покупки: ${selectedTargets.size} доп. ресурсов + (Гном, Покрывало, Лицензия)",
+                            color = if (selectedTargets.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 )
 
-                // Quick item presets
-                val allResources = listOf(
-                    "Медь", "Серебро", "Золото", "Руда",
-                    "Гном", "Белое покрывало", "Лицензия",
-                    "Изумруд", "Рубин", "Сапфир", "ММТ", "СМТ", "Свиток", "Эль"
-                )
+                // Quick item presets with MULTI-SELECT support
+                val primaryResources = listOf("Медь", "Серебро", "Золото", "Руда")
+                val superRareItems = listOf("Гном", "Белое покрывало", "Лицензия")
+                val gemResources = listOf("Изумруд", "Рубин", "Сапфир", "ММТ", "СМТ", "Свиток", "Эль")
+
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Быстрый выбор ресурса:", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Нажмите для выбора/снятия (Мультивыбор):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(
+                                onClick = { onUpdateConfig(config.copy(targetItemName = "")) },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("Снять все", fontSize = 11.sp)
+                            }
+                            TextButton(
+                                onClick = { onUpdateConfig(config.copy(targetItemName = primaryResources.joinToString(", "))) },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text("Базовые (4)", fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    // Row 1: Primary Resources
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        allResources.take(4).forEach { item ->
+                        primaryResources.forEach { item ->
+                            val isSelected = selectedTargets.any { it.equals(item, ignoreCase = true) }
                             FilterChip(
-                                selected = config.targetItemName.equals(item, ignoreCase = true),
-                                onClick = { onUpdateConfig(config.copy(targetItemName = item)) },
-                                label = { Text(item, fontSize = 12.sp) }
+                                selected = isSelected,
+                                onClick = { toggleTarget(item) },
+                                leadingIcon = if (isSelected) {
+                                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                                } else null,
+                                label = { Text(item, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) }
                             )
                         }
                     }
+
+                    // Row 2: Super Priority Items (Always active, marked with star)
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        allResources.subList(4, 7).forEach { item ->
+                        superRareItems.forEach { item ->
+                            val isSelected = selectedTargets.any { it.equals(item, ignoreCase = true) }
                             FilterChip(
-                                selected = config.targetItemName.equals(item, ignoreCase = true),
-                                onClick = { onUpdateConfig(config.copy(targetItemName = item)) },
-                                label = { Text("⭐ $item", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                                selected = true, // Always bought unconditionally
+                                onClick = {
+                                    toggleTarget(item)
+                                },
+                                leadingIcon = {
+                                    Text("⭐", fontSize = 12.sp)
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                ),
+                                label = { Text(item, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
                             )
                         }
                     }
+
+                    // Row 3 & 4: Gems & Special Items
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        allResources.drop(7).take(4).forEach { item ->
+                        gemResources.take(4).forEach { item ->
+                            val isSelected = selectedTargets.any { it.equals(item, ignoreCase = true) }
                             FilterChip(
-                                selected = config.targetItemName.equals(item, ignoreCase = true),
-                                onClick = { onUpdateConfig(config.copy(targetItemName = item)) },
-                                label = { Text(item, fontSize = 12.sp) }
+                                selected = isSelected,
+                                onClick = { toggleTarget(item) },
+                                leadingIcon = if (isSelected) {
+                                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                                } else null,
+                                label = { Text(item, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) }
                             )
                         }
                     }
+
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        allResources.drop(11).forEach { item ->
+                        gemResources.drop(4).forEach { item ->
+                            val isSelected = selectedTargets.any { it.equals(item, ignoreCase = true) }
                             FilterChip(
-                                selected = config.targetItemName.equals(item, ignoreCase = true),
-                                onClick = { onUpdateConfig(config.copy(targetItemName = item)) },
-                                label = { Text(item, fontSize = 12.sp) }
+                                selected = isSelected,
+                                onClick = { toggleTarget(item) },
+                                leadingIcon = if (isSelected) {
+                                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                                } else null,
+                                label = { Text(item, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) }
                             )
                         }
                     }

@@ -497,11 +497,6 @@ object OpenCvVisionScanner {
             Core.inRange(iconHsv, Scalar(0.0, 0.0, 30.0), Scalar(180.0, 60.0, 115.0), oreDarkMask)
             val oreDarkPixels = Core.countNonZero(oreDarkMask)
 
-            // 8. White Cloth / Shroud (Белое покрывало)
-            val whiteShroudMask = Mat()
-            Core.inRange(iconHsv, Scalar(0.0, 0.0, 205.0), Scalar(180.0, 40.0, 255.0), whiteShroudMask)
-            val whiteShroudPixels = Core.countNonZero(whiteShroudMask)
-
             val totalIconPixels = (iconRect.width * iconRect.height).toDouble()
 
             val redRatio = redPixels / totalIconPixels
@@ -512,7 +507,6 @@ object OpenCvVisionScanner {
             val silverCyanRatio = silverCyanPixels / totalIconPixels
             val silverMetallicRatio = silverMetallicPixels / totalIconPixels
             val oreDarkRatio = oreDarkPixels / totalIconPixels
-            val whiteShroudRatio = whiteShroudPixels / totalIconPixels
 
             val isCircular = checkCircularity(iconRgb)
 
@@ -521,17 +515,11 @@ object OpenCvVisionScanner {
             var reason = ""
 
             // Decision Tree Classifier
-            // 1. Red Check: Prohibition Sign (🚫) vs Red Ruby (Рубин)
-            if (redRatio > 0.05) {
-                if (isRedRingProhibition(iconRgb, redFull)) {
-                    detected = RES_BOUGHT
-                    confidence = min(0.99f, (redRatio * 4.0f).toFloat())
-                    reason = "Red prohibition ring/slash"
-                } else {
-                    detected = RES_RUBY
-                    confidence = min(0.99f, (redRatio * 3.5f).toFloat())
-                    reason = "Red ruby gemstone"
-                }
+            // 1. Red Check: In Resource Hunt grid, red ring/slash is ALWAYS Prohibition Sign (🚫 - Выкупленный лот)
+            if (redRatio > 0.025) {
+                detected = RES_BOUGHT
+                confidence = min(0.99f, (redRatio * 4.0f).toFloat())
+                reason = "Red prohibition ring/slash"
             }
             // 2. Cobalt Blue Sapphire (Сапфир)
             else if (blueRatio > 0.08) {
@@ -545,14 +533,8 @@ object OpenCvVisionScanner {
                 confidence = min(0.99f, (greenRatio * 3.5f).toFloat())
                 reason = "Emerald green gemstone reflection"
             }
-            // 4. White Shroud (Белое покрывало)
-            else if (whiteShroudRatio > 0.22) {
-                detected = RES_WHITE_SHROUD
-                confidence = 0.94f
-                reason = "White drape cloth texture"
-            }
-            // 5. Gold Ingot (Золото) vs MMT Gold Token
-            else if (goldRatio > 0.08) {
+            // 4. Gold Ingot (Золото) vs MMT Gold Token
+            else if (goldRatio > 0.06) {
                 if (isCircular && !isRoughRockTexture(iconRgb)) {
                     detected = RES_MMT_GOLD
                     confidence = 0.95f
@@ -567,14 +549,14 @@ object OpenCvVisionScanner {
                     reason = "Gold ingot bar"
                 }
             }
-            // 6. Copper Bar (Медь - terracotta ingot)
-            else if (copperRatio > 0.07) {
+            // 5. Copper Bar (Медь - terracotta ingot)
+            else if (copperRatio > 0.05) {
                 detected = RES_COPPER
                 confidence = min(0.98f, (copperRatio * 3.5f).toFloat())
                 reason = "Copper terracotta metallic ingot"
             }
-            // 7. Silver Bar (Серебро) vs SMT Silver Token (СМТ)
-            else if (silverCyanRatio > 0.05 || silverMetallicRatio > 0.15) {
+            // 6. Silver Bar (Серебро) vs SMT Silver Token (СМТ)
+            else if (silverCyanRatio > 0.04 || silverMetallicRatio > 0.12) {
                 if (isCircular && !isRoughRockTexture(iconRgb)) {
                     detected = RES_SMT_SILVER
                     confidence = 0.96f
@@ -585,23 +567,27 @@ object OpenCvVisionScanner {
                     reason = "Silver metallic ingot bar"
                 }
             }
-            // 8. Scroll (Свиток) or License (Лицензия)
+            // 7. Scroll (Свиток) or License (Лицензия)
             else if (hasScrollParchmentGeometry(iconHsv)) {
                 detected = RES_SCROLL
                 confidence = 0.92f
                 reason = "Parchment scroll contour"
             }
-            // 9. Ore (Руда - Dark faceted mineral stone)
+            // 8. Ore (Руда - Dark faceted mineral stone)
             else if (oreDarkRatio > 0.14 || isRoughRockTexture(iconRgb)) {
                 detected = RES_ORE
                 confidence = 0.96f
                 reason = "Dark grey mineral rock facets"
             } else {
-                // Fallback
-                if (isCircular && !isRoughRockTexture(iconRgb)) {
-                    detected = RES_SMT_SILVER
+                // Fallback: Check if silver or copper or ore
+                if (silverMetallicRatio > 0.08 || silverCyanRatio > 0.03) {
+                    detected = RES_SILVER
                     confidence = 0.88f
-                    reason = "Circular token shape"
+                    reason = "Silver metallic reflection"
+                } else if (copperRatio > 0.03) {
+                    detected = RES_COPPER
+                    confidence = 0.88f
+                    reason = "Copper tone"
                 } else {
                     detected = RES_ORE
                     confidence = 0.85f
@@ -613,7 +599,7 @@ object OpenCvVisionScanner {
             redMask1.release(); redMask2.release(); redFull.release()
             greenMask.release(); blueMask.release()
             copperOrangeMask.release(); goldYellowMask.release()
-            silverCyanMask.release(); silverMetallicMask.release(); oreDarkMask.release(); whiteShroudMask.release()
+            silverCyanMask.release(); silverMetallicMask.release(); oreDarkMask.release()
             iconHsv.release(); iconRgb.release(); hsv.release(); mat.release()
 
             return ClassificationRaw(
@@ -695,36 +681,117 @@ object OpenCvVisionScanner {
         try {
             val w = rgbMat.cols()
             val h = rgbMat.rows()
-            if (w < 10 || h < 10) return false
+            if (w < 10 || h < 10) return true
 
-            // In prohibition sign 🚫:
-            // 1. The outer shape is a distinct circular ring, and the center core (30%x30%) has mostly dark open background.
-            // 2. Ruby is a solid faceted crystal whose center core is heavily filled with red facets and specular bright glints (V > 215).
-            val coreX = (w * 0.35).toInt()
-            val coreY = (h * 0.35).toInt()
-            val coreW = (w * 0.30).toInt().coerceAtLeast(2)
-            val coreH = (h * 0.30).toInt().coerceAtLeast(2)
+            // In a prohibition sign 🚫:
+            // 1. Red is distributed along the circular ring and the diagonal slash.
+            // 2. The corners (0..15% and 85..100%) have NO red (background).
+            // 3. The inner quadrants: Top-Right (X: 58..80%, Y: 18..40%) and Bottom-Left (X: 18..40%, Y: 58..80%) are open dark gaps.
+            val qW = (w * 0.22).toInt().coerceAtLeast(2)
+            val qH = (h * 0.22).toInt().coerceAtLeast(2)
 
-            val coreRedMat = Mat(redMask, Rect(coreX, coreY, coreW, coreH))
-            val coreRedPixels = Core.countNonZero(coreRedMat)
-            val coreRedRatio = coreRedPixels.toDouble() / (coreW * coreH)
-            coreRedMat.release()
+            val trX = (w * 0.58).toInt().coerceIn(0, w - qW)
+            val trY = (h * 0.18).toInt().coerceIn(0, h - qH)
+            val trMat = Mat(redMask, Rect(trX, trY, qW, qH))
+            val trRed = Core.countNonZero(trMat).toDouble() / (qW * qH)
+            trMat.release()
 
-            // In prohibition sign, the core only contains a thin diagonal line (coreRedRatio < 0.38).
-            // In Ruby, the core is densely packed with red crystal facets (coreRedRatio >= 0.45).
-            if (coreRedRatio >= 0.42) {
-                return false // Solid ruby!
+            val blX = (w * 0.18).toInt().coerceIn(0, w - qW)
+            val blY = (h * 0.58).toInt().coerceIn(0, h - qH)
+            val blMat = Mat(redMask, Rect(blX, blY, qW, qH))
+            val blRed = Core.countNonZero(blMat).toDouble() / (qW * qH)
+            blMat.release()
+
+            // In prohibition sign, the open quadrant holes have very low red fill (< 0.28).
+            // In Ruby (solid gemstone), red crystal facets fill across the diamond.
+            if (trRed < 0.28 || blRed < 0.28) {
+                return true // Prohibition sign!
             }
 
-            // Check if center quadrant off-axis spots have dark gaps
-            val checkP1 = redMask.get((h * 0.32).toInt(), (w * 0.68).toInt()) // top-right quadrant
-            val checkP2 = redMask.get((h * 0.68).toInt(), (w * 0.32).toInt()) // bottom-left quadrant
-            val hasOpenHoles = (checkP1 != null && checkP1[0] == 0.0) && (checkP2 != null && checkP2[0] == 0.0)
-
-            return hasOpenHoles || (coreRedRatio < 0.35)
+            // Total red ratio across entire icon box
+            val totalRed = Core.countNonZero(redMask).toDouble() / (w * h)
+            return totalRed < 0.32
         } catch (e: Throwable) {
-            return false
+            return true
         }
+    }
+
+    /**
+     * Detects the Close button ('X' inside yellow circle at top-left of Resource Hunt window).
+     * Typical position on 900x1600: X = ~82, Y = ~232 (approx 9.1% x 14.5%).
+     */
+    fun detectResourceHuntCloseButton(
+        screenBitmap: Bitmap,
+        ocrLines: List<com.google.mlkit.vision.text.Text.Line> = emptyList()
+    ): Point {
+        val width = screenBitmap.width
+        val height = screenBitmap.height
+
+        // 1. OCR Check: Look for 'X', 'x', '✕', '×' in top-left region
+        for (line in ocrLines) {
+            val text = line.text.trim().lowercase()
+            val box = line.boundingBox ?: continue
+            val cx = box.centerX().toFloat()
+            val cy = box.centerY().toFloat()
+            if (cx in (width * 0.02f)..(width * 0.25f) && cy in (height * 0.08f)..(height * 0.22f)) {
+                if (text == "x" || text == "х" || text == "×" || text == "✕" || text.contains("x") || text.contains("х")) {
+                    Log.i(TAG, "🎯 [OPENCV X-CLOSE] OCR точное совпадение кнопки 'X': ($cx, $cy)")
+                    return Point(cx.toDouble(), cy.toDouble())
+                }
+            }
+        }
+
+        // 2. OpenCV Color & Circle Detection for yellow ring at top-left
+        try {
+            initialize()
+            val roiX = (width * 0.03f).toInt().coerceIn(0, width - 1)
+            val roiY = (height * 0.08f).toInt().coerceIn(0, height - 1)
+            val roiW = (width * 0.18f).toInt().coerceIn(10, width - roiX)
+            val roiH = (height * 0.14f).toInt().coerceIn(10, height - roiY)
+
+            val roiBitmap = Bitmap.createBitmap(screenBitmap, roiX, roiY, roiW, roiH)
+            val mat = Mat()
+            Utils.bitmapToMat(roiBitmap, mat)
+            val hsv = Mat()
+            Imgproc.cvtColor(mat, hsv, Imgproc.COLOR_RGB2HSV)
+
+            val yellowMask = Mat()
+            Core.inRange(hsv, Scalar(15.0, 100.0, 100.0), Scalar(38.0, 255.0, 255.0), yellowMask)
+
+            val contours = mutableListOf<org.opencv.core.MatOfPoint>()
+            val hierarchy = Mat()
+            Imgproc.findContours(yellowMask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+
+            var bestCenter: Point? = null
+            var maxArea = 0.0
+            for (c in contours) {
+                val area = Imgproc.contourArea(c)
+                if (area > maxArea && area > 40.0) {
+                    maxArea = area
+                    val moments = Imgproc.moments(c)
+                    if (moments.m00 > 0) {
+                        val cX = moments.m10 / moments.m00
+                        val cY = moments.m01 / moments.m00
+                        bestCenter = Point(roiX + cX, roiY + cY)
+                    }
+                }
+            }
+
+            yellowMask.release(); hierarchy.release(); hsv.release(); mat.release(); roiBitmap.recycle()
+
+            if (bestCenter != null) {
+                Log.i(TAG, "🎯 [OPENCV X-CLOSE] OpenCV нашел желтый круг кнопки 'X': (${bestCenter.x}, ${bestCenter.y})")
+                return bestCenter
+            }
+        } catch (e: Throwable) {
+            // Fallback
+        }
+
+        // 3. Robust Geometric Default for 'X' button (X: 9.1%, Y: 14.5% => X: 82, Y: 232 on 900x1600)
+        val defaultX = width * 0.091
+        val defaultY = height * 0.145
+        Log.i(TAG, "🎯 [OPENCV X-CLOSE] Использованы эталонные координаты 'X': ($defaultX, $defaultY)")
+        return Point(defaultX, defaultY)
     }
 
     /**
@@ -844,6 +911,7 @@ object OpenCvVisionScanner {
 
         // 2. Intelligent Default fallback based on specific resource type
         return when (resourceName) {
+            RES_BOUGHT -> Pair("", null)
             RES_ORE -> Pair("1000.0", 1000.0)
             RES_COPPER, RES_SILVER -> Pair("10.0", 10.0)
             RES_GOLD -> Pair("5.0", 5.0)

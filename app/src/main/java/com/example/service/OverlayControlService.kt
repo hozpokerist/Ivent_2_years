@@ -380,10 +380,16 @@ class OverlayControlService : Service() {
                     btnToggleBuying.text = if (isRealBuying) "🛒 Покупка: ВКЛ (Кликает)" else "👁 Покупка: ВЫКЛ (Мониторинг)"
                     btnToggleBuying.setBackgroundColor(if (isRealBuying) Color.rgb(255, 152, 0) else Color.rgb(96, 125, 139))
 
+                    val targetDisplay = if (config?.targetItemName.isNullOrBlank()) {
+                        "Гном, Покрывало, Лицензия (Только супер-приоритет)"
+                    } else {
+                        "${config?.targetItemName} + (⭐ Гном, Покрывало, Лицензия)"
+                    }
+
                     statusView.text = when {
                         !isAccConnected -> "⚠️ Спец. возможности выключены"
                         cooldownMs > 0 -> "⏳ Кулдаун: ${cooldownMs / 1000} сек"
-                        botActive -> "🟢 Работает (Поиск: ${config?.targetItemName ?: "—"})\n${if (isRealBuying) "⚡ Режим: РЕАЛЬНАЯ ПОКУПКА" else "👁 Режим: ТОЛЬКО МОНИТОРИНГ"}"
+                        botActive -> "🟢 Работает (Цели: $targetDisplay)\n${if (isRealBuying) "⚡ Режим: РЕАЛЬНАЯ ПОКУПКА" else "👁 Режим: ТОЛЬКО МОНИТОРИНГ"}"
                         else -> "⚪ Остановлен (Нажмите для старта)"
                     }
 

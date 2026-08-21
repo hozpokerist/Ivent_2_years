@@ -2251,10 +2251,37 @@ class LootBuyerAccessibilityService : AccessibilityService() {
         if (shouldLogFullTable) {
             hasScannedInitialBoardOnce = true
         }
-        bitmap.recycle()
 
         // Check for target items
-        val targetName = config.targetItemName.trim().lowercase()
+        // Parse multiple targets (comma-separated, e.g. "Медь, Золото, Руда")
+        val rawTargets = config.targetItemName
+            .split(",", ";", "/")
+            .map { it.trim().lowercase() }
+            .filter { it.isNotEmpty() }
+
+        // Helper function to check if a slot resource matches any of the user targets
+        fun isTargetMatch(slotName: String): Boolean {
+            if (rawTargets.isEmpty()) return false
+            val sLower = slotName.lowercase()
+            return rawTargets.any { target ->
+                sLower.contains(target) ||
+                (target.contains("гном") && slotName.contains("Гном")) ||
+                (target.contains("покрывал") && slotName.contains("Белое покрывало")) ||
+                (target.contains("лиценз") && slotName.contains("Лицензия")) ||
+                (target.contains("мед") && slotName.contains("Медь")) ||
+                (target.contains("золот") && slotName.contains("Золото")) ||
+                (target.contains("серебр") && slotName.contains("Серебро")) ||
+                (target.contains("руд") && slotName.contains("Руда")) ||
+                (target.contains("изумруд") && slotName.contains("Изумруд")) ||
+                (target.contains("emerald") && slotName.contains("Изумруд")) ||
+                (target.contains("эль") && slotName.contains("Эль")) ||
+                (target.contains("свиток") && slotName.contains("Свиток")) ||
+                (target.contains("ммт") && slotName.contains("ММТ")) ||
+                (target.contains("смт") && slotName.contains("СМТ")) ||
+                (target.contains("сапфир") && slotName.contains("Сапфир")) ||
+                (target.contains("рубин") && slotName.contains("Рубин"))
+            }
+        }
 
         // 1. Mandatory Super-Priority Items: "Гном", "Белое покрывало", "Лицензия" are ALWAYS bought if available
         val superPrioritySlots = report.detectedSlots.filter { slot ->
@@ -2265,26 +2292,9 @@ class LootBuyerAccessibilityService : AccessibilityService() {
             )
         }
 
-        // 2. Target item selected by user
+        // 2. Target item(s) selected by user
         val targetMatchingSlots = report.detectedSlots.filter { slot ->
-            !slot.isBought && (
-                slot.resourceName.lowercase().contains(targetName) ||
-                (targetName.contains("гном") && slot.resourceName.contains("Гном")) ||
-                (targetName.contains("покрывал") && slot.resourceName.contains("Белое покрывало")) ||
-                (targetName.contains("лиценз") && slot.resourceName.contains("Лицензия")) ||
-                (targetName.contains("мед") && slot.resourceName.contains("Медь")) ||
-                (targetName.contains("золот") && slot.resourceName.contains("Золото")) ||
-                (targetName.contains("серебр") && slot.resourceName.contains("Серебро")) ||
-                (targetName.contains("руд") && slot.resourceName.contains("Руда")) ||
-                (targetName.contains("изумруд") && slot.resourceName.contains("Изумруд")) ||
-                (targetName.contains("emerald") && slot.resourceName.contains("Изумруд")) ||
-                (targetName.contains("эль") && slot.resourceName.contains("Эль")) ||
-                (targetName.contains("свиток") && slot.resourceName.contains("Свиток")) ||
-                (targetName.contains("ммт") && slot.resourceName.contains("ММТ")) ||
-                (targetName.contains("смт") && slot.resourceName.contains("СМТ")) ||
-                (targetName.contains("сапфир") && slot.resourceName.contains("Сапфир")) ||
-                (targetName.contains("рубин") && slot.resourceName.contains("Рубин"))
-            )
+            !slot.isBought && isTargetMatch(slot.resourceName)
         }
 
         val matchingAvailableSlots = if (superPrioritySlots.isNotEmpty()) {
@@ -2324,7 +2334,7 @@ class LootBuyerAccessibilityService : AccessibilityService() {
                 }
                 
                 // Pause slightly to verify confirmation dialog
-                delay(800)
+                delay(1200)
             } else {
                 // In monitoring mode, throttle log to once every 4 seconds to avoid spamming
                 if (now - lastMonitoringLogTimestamp > 4000L || isManualScan) {
@@ -2337,11 +2347,51 @@ class LootBuyerAccessibilityService : AccessibilityService() {
                     AutoBuyerLogs.addLog("ℹ️ [РЕЖИМ МОНИТОРИНГА] Цель '${bestSlot.resourceName}' обнаружена. Покупка НЕ производится ('Реальная покупка' = ВЫКЛ в настройках или оверлее).")
                 }
             }
+
+            // In continuous loop: after processing target slot, refresh the grid
+            if (!isManualScan) {
+                val closePoint = OpenCvVisionScanner.detectResourceHuntCloseButton(bitmap, ocrLines)
+                val closeX = (closePoint.x * scaleX).toFloat()
+                val closeY = (closePoint.y * scaleY).toFloat()
+
+                AutoBuyerLogs.addLog("🔄 [ОБНОВЛЕНИЕ СЕТКИ] Закрываем окно (крестик 'X': X: ${closeX.toInt()}, Y: ${closeY.toInt()})...")
+                clickAtWithRandomization(closeX, closeY, config)
+                delay(1000)
+
+                val point2 = OpenCvVisionScanner.detectAnniversary2Button(bitmap, ocrLines)
+                val b2X = (point2.x * scaleX).toFloat()
+                val b2Y = (point2.y * scaleY).toFloat().coerceAtLeast(screenHeight * 0.08f)
+
+                AutoBuyerLogs.addLog("👉 [КНОПКА 2] Повторно открываем Resource Hunt через 1 сек (X: ${b2X.toInt()}, Y: ${b2Y.toInt()})...")
+                clickAtWithRandomization(b2X, b2Y, config)
+                delay(2000)
+            }
         } else {
             if (shouldLogFullTable) {
-                AutoBuyerLogs.addLog("🔍 [16 ЭЛЕМЕНТОВ] Цель '$targetName' в доступных слотах не найдена.")
+                val targetsDesc = if (rawTargets.isEmpty()) "Супер-приоритет (Гном, Покрывало, Лицензия)" else rawTargets.joinToString(", ")
+                AutoBuyerLogs.addLog("🔍 [16 ЭЛЕМЕНТОВ] Цели ($targetsDesc) в доступных слотах не найдены.")
+            }
+
+            // In continuous loop: if no targets found, refresh the board by closing and reopening after 1 second
+            if (!isManualScan) {
+                val closePoint = OpenCvVisionScanner.detectResourceHuntCloseButton(bitmap, ocrLines)
+                val closeX = (closePoint.x * scaleX).toFloat()
+                val closeY = (closePoint.y * scaleY).toFloat()
+
+                AutoBuyerLogs.addLog("🔄 [ОБНОВЛЕНИЕ СЕТКИ] Нужные лоты не найдены. Закрываем окно (крестик 'X': X: ${closeX.toInt()}, Y: ${closeY.toInt()})...")
+                clickAtWithRandomization(closeX, closeY, config)
+                delay(1000)
+
+                val point2 = OpenCvVisionScanner.detectAnniversary2Button(bitmap, ocrLines)
+                val b2X = (point2.x * scaleX).toFloat()
+                val b2Y = (point2.y * scaleY).toFloat().coerceAtLeast(screenHeight * 0.08f)
+
+                AutoBuyerLogs.addLog("👉 [КНОПКА 2] Повторно открываем Resource Hunt через 1 сек для обновления 16 ячеек (X: ${b2X.toInt()}, Y: ${b2Y.toInt()})...")
+                clickAtWithRandomization(b2X, b2Y, config)
+                delay(2000)
             }
         }
+        bitmap.recycle()
     }
 
     /**

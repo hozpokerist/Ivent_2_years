@@ -33,7 +33,7 @@ import java.io.FileOutputStream
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val db = AppDatabase.getDatabase(application)
     private val defaultConfig = AppConfiguration(
-        targetItemName = "Медь",
+        targetItemName = "",
         priceThreshold = 0.0,
         usePriceThreshold = false,
         autoBuyEnabled = false,
