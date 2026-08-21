@@ -60,6 +60,8 @@ class LootBuyerAccessibilityService : AccessibilityService() {
     @Volatile private var cycleEndTimeMs = 0L
     @Volatile private var purchasesThisCycleRun = 0
     @Volatile private var cycleInitialized = false
+    @Volatile private var hasScannedInitialBoardOnce = false
+    @Volatile private var lastMonitoringLogTimestamp = 0L
 
     private fun registerPurchaseSuccess() {
         purchasesThisCycleRun++
@@ -165,6 +167,7 @@ class LootBuyerAccessibilityService : AccessibilityService() {
     fun startAutomation() {
         if (isRunning) return
         isRunning = true
+        hasScannedInitialBoardOnce = false
         serviceScope.launch {
             AutoBuyerLogs.addLog("Starting Auto-Buyer loop...")
         }
@@ -253,16 +256,13 @@ class LootBuyerAccessibilityService : AccessibilityService() {
                     cycleInitialized = false
                 }
 
-                if (config.useViewScanning) {
-                    if (MediaProjectionHelper.hasProjection()) {
-                        performOcrScreenScan(config)
-                    } else {
-                        // Native View Tree scanning mode fallback
-                        performNativeViewScan(config)
-                    }
+                if (MediaProjectionHelper.hasProjection()) {
+                    performGrid16Scan(config)
+                } else if (config.useViewScanning) {
+                    performNativeViewScan(config)
                 } else {
-                    // Coordinate Tap Macro mode
-                    performCoordinateMacro(config)
+                    AutoBuyerLogs.addLog("⚠️ [СКАНИРОВАНИЕ] Для работы сканера требуется авторизация захвата экрана. Нажмите 'Разрешить захват экрана' в приложении.")
+                    delay(2500)
                 }
 
                 // Delay by the configured scan interval (Search Delay / Scan Period)
@@ -294,19 +294,19 @@ class LootBuyerAccessibilityService : AccessibilityService() {
     ): Pair<Float, Float> {
         // If we have calibrated coordinates, use them first!
         when (tabName) {
-            "Ore" -> if (config.calibratedOreX != -1f && config.calibratedOreY != -1f) {
+            "Ore" -> if (config.calibratedOreX != null && config.calibratedOreX != -1f && config.calibratedOreY != null && config.calibratedOreY != -1f) {
                 return Pair(config.calibratedOreX, config.calibratedOreY)
             }
-            "Copper" -> if (config.calibratedCopperX != -1f && config.calibratedCopperY != -1f) {
+            "Copper" -> if (config.calibratedCopperX != null && config.calibratedCopperX != -1f && config.calibratedCopperY != null && config.calibratedCopperY != -1f) {
                 return Pair(config.calibratedCopperX, config.calibratedCopperY)
             }
-            "Silver" -> if (config.calibratedSilverX != -1f && config.calibratedSilverY != -1f) {
+            "Silver" -> if (config.calibratedSilverX != null && config.calibratedSilverX != -1f && config.calibratedSilverY != null && config.calibratedSilverY != -1f) {
                 return Pair(config.calibratedSilverX, config.calibratedSilverY)
             }
-            "Gold" -> if (config.calibratedGoldX != -1f && config.calibratedGoldY != -1f) {
+            "Gold" -> if (config.calibratedGoldX != null && config.calibratedGoldX != -1f && config.calibratedGoldY != null && config.calibratedGoldY != -1f) {
                 return Pair(config.calibratedGoldX, config.calibratedGoldY)
             }
-            "Sap" -> if (config.calibratedSapX != -1f && config.calibratedSapY != -1f) {
+            "Sap" -> if (config.calibratedSapX != null && config.calibratedSapX != -1f && config.calibratedSapY != null && config.calibratedSapY != -1f) {
                 return Pair(config.calibratedSapX, config.calibratedSapY)
             }
         }
@@ -368,11 +368,11 @@ class LootBuyerAccessibilityService : AccessibilityService() {
     private fun getTabCoordinatesCached(tabName: String, config: AppConfiguration, screenWidth: Float, screenHeight: Float): Pair<Float, Float> {
         // Calibrated coordinates from DB
         when (tabName) {
-            "Ore" -> if (config.calibratedOreX != -1f && config.calibratedOreY != -1f) return Pair(config.calibratedOreX, config.calibratedOreY)
-            "Copper" -> if (config.calibratedCopperX != -1f && config.calibratedCopperY != -1f) return Pair(config.calibratedCopperX, config.calibratedCopperY)
-            "Silver" -> if (config.calibratedSilverX != -1f && config.calibratedSilverY != -1f) return Pair(config.calibratedSilverX, config.calibratedSilverY)
-            "Gold" -> if (config.calibratedGoldX != -1f && config.calibratedGoldY != -1f) return Pair(config.calibratedGoldX, config.calibratedGoldY)
-            "Sap" -> if (config.calibratedSapX != -1f && config.calibratedSapY != -1f) return Pair(config.calibratedSapX, config.calibratedSapY)
+            "Ore" -> if (config.calibratedOreX != null && config.calibratedOreX != -1f && config.calibratedOreY != null && config.calibratedOreY != -1f) return Pair(config.calibratedOreX, config.calibratedOreY)
+            "Copper" -> if (config.calibratedCopperX != null && config.calibratedCopperX != -1f && config.calibratedCopperY != null && config.calibratedCopperY != -1f) return Pair(config.calibratedCopperX, config.calibratedCopperY)
+            "Silver" -> if (config.calibratedSilverX != null && config.calibratedSilverX != -1f && config.calibratedSilverY != null && config.calibratedSilverY != -1f) return Pair(config.calibratedSilverX, config.calibratedSilverY)
+            "Gold" -> if (config.calibratedGoldX != null && config.calibratedGoldX != -1f && config.calibratedGoldY != null && config.calibratedGoldY != -1f) return Pair(config.calibratedGoldX, config.calibratedGoldY)
+            "Sap" -> if (config.calibratedSapX != null && config.calibratedSapX != -1f && config.calibratedSapY != null && config.calibratedSapY != -1f) return Pair(config.calibratedSapX, config.calibratedSapY)
         }
         // Cached coordinates from memory
         when (tabName) {
@@ -399,7 +399,7 @@ class LootBuyerAccessibilityService : AccessibilityService() {
     /**
      * Optical Character Recognition (OCR) Screen Scanning Mode (Perfect for Unity Games).
      */
-    private suspend fun performOcrScreenScan(config: AppConfiguration) = withContext(Dispatchers.Default) {
+    suspend fun performOcrScreenScan(config: AppConfiguration) = withContext(Dispatchers.Default) {
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
         // Get device screen metrics for coordinate mapping scaling
@@ -541,7 +541,7 @@ class LootBuyerAccessibilityService : AccessibilityService() {
                 if (confirmLine?.boundingBox != null) {
                     clickX = confirmLine.boundingBox!!.centerX() * scaleX
                     clickY = confirmLine.boundingBox!!.centerY() * scaleY
-                } else if (config.calibratedConfirmX != -1f && config.calibratedConfirmY != -1f) {
+                } else if (config.calibratedConfirmX != null && config.calibratedConfirmX != -1f && config.calibratedConfirmY != null && config.calibratedConfirmY != -1f) {
                     clickX = config.calibratedConfirmX
                     clickY = config.calibratedConfirmY
                 }
@@ -559,7 +559,7 @@ class LootBuyerAccessibilityService : AccessibilityService() {
                 var clickY = -1f
                 var targetFound = false
 
-                if (config.calibratedConfirmX != -1f && config.calibratedConfirmY != -1f) {
+                if (config.calibratedConfirmX != null && config.calibratedConfirmX != -1f && config.calibratedConfirmY != null && config.calibratedConfirmY != -1f) {
                     clickX = config.calibratedConfirmX
                     clickY = config.calibratedConfirmY
                     targetFound = true
@@ -1062,7 +1062,7 @@ class LootBuyerAccessibilityService : AccessibilityService() {
      * Looks for nodes matching the item name, extracts price from surrounding nodes,
      * checks threshold, and triggers click if matches.
      */
-    private suspend fun performNativeViewScan(config: AppConfiguration) {
+    suspend fun performNativeViewScan(config: AppConfiguration) {
         val rootNode = rootInActiveWindow ?: return
         AutoBuyerLogs.addLog("Scanning active window view nodes...")
         
@@ -1158,8 +1158,15 @@ class LootBuyerAccessibilityService : AccessibilityService() {
      * Refreshes, checks coordinates, and buys if threshold passes.
      */
     private suspend fun performCoordinateMacro(config: AppConfiguration) {
-        AutoBuyerLogs.addLog("Macro: Tapping Search/Refresh button at (${config.refreshButtonX}, ${config.refreshButtonY})")
-        clickAt(config.refreshButtonX, config.refreshButtonY)
+        val refX = config.refreshButtonX ?: return
+        val refY = config.refreshButtonY ?: return
+        val chkX = config.checkAreaX ?: return
+        val chkY = config.checkAreaY ?: return
+        val buyX = config.buyButtonX ?: return
+        val buyY = config.buyButtonY ?: return
+
+        AutoBuyerLogs.addLog("Macro: Tapping Search/Refresh button at ($refX, $refY)")
+        clickAt(refX, refY)
         
         delay(800) // Wait for refresh
         
@@ -1171,7 +1178,7 @@ class LootBuyerAccessibilityService : AccessibilityService() {
         // and if it matches, execute the final Buy button coordinate click.
         
         // Tapping the lot checking coordinates
-        clickAt(config.checkAreaX, config.checkAreaY)
+        clickAt(chkX, chkY)
         delay(600)
 
         // Try to read whatever text is highlighted/focused in accessibility tree to do a hybrid scan
@@ -1204,8 +1211,8 @@ class LootBuyerAccessibilityService : AccessibilityService() {
 
         if (matchesThreshold) {
             if (config.enableActualBuying) {
-                AutoBuyerLogs.addLog("🎉 [ПОКУПКА] Координатное совпадение! Цена: $currentPrice. Кликаем кнопку покупки на (${config.buyButtonX}, ${config.buyButtonY})")
-                clickAt(config.buyButtonX, config.buyButtonY)
+                AutoBuyerLogs.addLog("🎉 [ПОКУПКА] Координатное совпадение! Цена: $currentPrice. Кликаем кнопку покупки на ($buyX, $buyY)")
+                clickAt(buyX, buyY)
             } else {
                 AutoBuyerLogs.addLog("🎉 [МОНИТОРИНГ] Координатное совпадение! Цена: $currentPrice. (Клик по кнопке 'Купить' пропущен - режим только логирования)")
             }
@@ -1268,8 +1275,8 @@ class LootBuyerAccessibilityService : AccessibilityService() {
     fun clickAtWithRandomization(x: Float, y: Float, config: AppConfiguration, callback: (() -> Unit)? = null) {
         val radius = config.clickRandomizationRadiusPx
         if (radius > 0) {
-            val rx = x + (-radius..radius).random().toFloat()
-            val ry = y + (-radius..radius).random().toFloat()
+            val rx = x + ((Math.random() * 2 - 1) * radius).toFloat()
+            val ry = y + ((Math.random() * 2 - 1) * radius).toFloat()
             clickAt(rx, ry, callback)
         } else {
             clickAt(x, y, callback)
@@ -1595,7 +1602,7 @@ class LootBuyerAccessibilityService : AccessibilityService() {
             var clickX = -1f
             var clickY = -1f
             
-            if (config != null && config.calibratedConfirmX != -1f && config.calibratedConfirmY != -1f) {
+            if (config != null && config.calibratedConfirmX != null && config.calibratedConfirmX != -1f && config.calibratedConfirmY != null && config.calibratedConfirmY != -1f) {
                 clickX = config.calibratedConfirmX
                 clickY = config.calibratedConfirmY
                 AutoBuyerLogs.addLog("⚠️ [ОШИБКА] Обнаружено окно 'Лот уже куплен'! Кликаем калиброванную 'Confirm' в координатах ($clickX, $clickY) и сбрасываем кулдаун.")
@@ -1674,28 +1681,15 @@ class LootBuyerAccessibilityService : AccessibilityService() {
     ): Boolean {
         val fullText = lines.joinToString(" ") { it.text.lowercase() }
         
-        val isRateLimitText = fullText.contains("try through") ||
-                              fullText.contains("cry througb") ||
-                              fullText.contains("try througb") ||
-                              fullText.contains("cry through") ||
-                              fullText.contains("througb") ||
-                              fullText.contains("through") ||
+        val isRateLimitText = ((fullText.contains("through") || fullText.contains("througb") || fullText.contains("try in") || fullText.contains("cry in")) &&
+                              (fullText.contains("sec") || fullText.contains("second") || fullText.contains("сек"))) ||
                               fullText.contains("server is lost") ||
                               fullText.contains("connection with") ||
-                              fullText.contains("cry connect") ||
-                              fullText.contains("try connect") ||
                               fullText.contains("too fast") ||
-                              (fullText.contains("cry") && fullText.contains("second")) ||
-                              (fullText.contains("try") && fullText.contains("second")) ||
-                              (fullText.contains("cry") && fullText.contains("sec")) ||
-                              (fullText.contains("try") && fullText.contains("sec")) ||
-                              fullText.contains("попробуйте") ||
+                              fullText.contains("попробуйте через") ||
                               fullText.contains("подождите")
 
-        val confirmLine = lines.firstOrNull { isConfirmButtonText(it.text) }
-        val hasConfirmButton = confirmLine != null
-
-        if (!isRateLimitText && !hasConfirmButton) {
+        if (!isRateLimitText) {
             return false
         }
 
@@ -1755,10 +1749,11 @@ class LootBuyerAccessibilityService : AccessibilityService() {
         var clickX = -1f
         var clickY = -1f
 
-        if (config.calibratedConfirmX != -1f && config.calibratedConfirmY != -1f) {
+        if (config.calibratedConfirmX != null && config.calibratedConfirmX != -1f && config.calibratedConfirmY != null && config.calibratedConfirmY != -1f) {
             clickX = config.calibratedConfirmX
             clickY = config.calibratedConfirmY
         } else {
+            val confirmLine = lines.firstOrNull { isConfirmButtonText(it.text) }
             val bounds = confirmLine?.boundingBox
             if (bounds != null) {
                 clickX = bounds.centerX() * scaleX
@@ -1773,12 +1768,12 @@ class LootBuyerAccessibilityService : AccessibilityService() {
             }
         }
 
-        AutoBuyerLogs.addLog("⏳ [ОГРАНИЧЕНИЕ] Обнаружено окно задержки/ограничения ('Try through $secondsToWait seconds'). " +
-                "Кликаем 'Confirm' в координатах (${clickX.toInt()}, ${clickY.toInt()}) для закрытия и засыпаем на $totalWaitSeconds сек...")
+        AutoBuyerLogs.addLog("⏳ [ТАЙМАУТ ИГРЫ] Обнаружено окно задержки 'Try through $secondsToWait seconds'. " +
+                "Это НЕ покупка! Закрываем системное окно нажатием 'Confirm' в координатах (${clickX.toInt()}, ${clickY.toInt()}) и ожидаем $totalWaitSeconds сек...")
         clickAt(clickX, clickY)
 
         delay(totalWaitSeconds * 1000L)
-        AutoBuyerLogs.addLog("✨ [ОГРАНИЧЕНИЕ] Ожидание завершено, окно закрыто. Продолжаем работу.")
+        AutoBuyerLogs.addLog("✨ [ТАЙМАУТ ИГРЫ] Ожидание завершено, окно закрыто. Продолжаем сканирование.")
         return true
     }
 
@@ -1937,7 +1932,7 @@ class LootBuyerAccessibilityService : AccessibilityService() {
             if (hasLotAlreadyPurchasedText) {
                 var clickX = -1f
                 var clickY = -1f
-                if (config.calibratedConfirmX != -1f && config.calibratedConfirmY != -1f) {
+                if (config.calibratedConfirmX != null && config.calibratedConfirmX != -1f && config.calibratedConfirmY != null && config.calibratedConfirmY != -1f) {
                     clickX = config.calibratedConfirmX
                     clickY = config.calibratedConfirmY
                 } else {
@@ -2188,11 +2183,143 @@ class LootBuyerAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Unity 4x4 Grid Recognition and Navigation:
-     * 1. Detects button '2' and clicks it if present.
-     * 2. Scans 16 slots (4x4 grid) in the opened window.
-     * 3. If target element matches, clicks the element center.
-     * 4. If no target element matches, clicks top-left 'X' close button.
+     * Dedicated 16-element grid scanner (OpenCV + MLKit OCR):
+     * Directly captures screen, scans all 16 slots, detects matching target resources,
+     * logs clean matrix, and executes purchase click if enableActualBuying is enabled.
+     */
+    suspend fun performGrid16Scan(config: AppConfiguration, isManualScan: Boolean = false) = withContext(Dispatchers.Default) {
+        val bitmap = MediaProjectionHelper.getLatestScreenshot()
+        if (bitmap == null) {
+            AutoBuyerLogs.addLog("⚠️ [16 ЭЛЕМЕНТОВ] Ожидание кадра экрана (MediaProjection)...")
+            return@withContext
+        }
+
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+        val metrics = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        windowManager.defaultDisplay.getRealMetrics(metrics)
+        val screenWidth = metrics.widthPixels.toFloat()
+        val screenHeight = metrics.heightPixels.toFloat()
+
+        val scaleX = screenWidth / bitmap.width
+        val scaleY = screenHeight / bitmap.height
+
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val inputImage = InputImage.fromBitmap(bitmap, 0)
+        val ocrLines = try {
+            val res = Tasks.await(recognizer.process(inputImage))
+            res.textBlocks.flatMap { it.lines }
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        val db = AppDatabase.getDatabase(this@LootBuyerAccessibilityService)
+
+        // Check if rate-limit popup or already-purchased dialog or confirmation dialog is showing
+        if (handleTryThroughDialogIfNeeded(ocrLines, scaleX, scaleY, config)) {
+            bitmap.recycle()
+            return@withContext
+        }
+        if (dismissLotAlreadyPurchasedDialogIfNeeded(ocrLines, scaleX, scaleY, db)) {
+            bitmap.recycle()
+            return@withContext
+        }
+        if (dismissSuccessDialogIfNeeded(ocrLines, scaleX, scaleY, db, config)) {
+            bitmap.recycle()
+            return@withContext
+        }
+
+        // Check if we are on the Main Game Screen (Mining Cave) and need to open the 16-element Grid via button "2"
+        val isMainScreen = OpenCvVisionScanner.isMainGameScreen(ocrLines)
+        val isGridOpen = OpenCvVisionScanner.isResourceHuntWindowOpen(bitmap, ocrLines)
+
+        if (isMainScreen || !isGridOpen) {
+            val point2 = OpenCvVisionScanner.detectAnniversary2Button(bitmap, ocrLines)
+            val b2X = (point2.x * scaleX).toFloat()
+            val b2Y = (point2.y * scaleY).toFloat().coerceAtLeast(screenHeight * 0.08f) // Strictly below Android status bar
+
+            AutoBuyerLogs.addLog("👉 [КНОПКА 2] Открываем окно Resource Hunt: нажимаем на кнопку '2' (X: ${b2X.toInt()}, Y: ${b2Y.toInt()}) через OpenCV...")
+            clickAtWithRandomization(b2X, b2Y, config)
+            bitmap.recycle()
+            delay(2500)
+            return@withContext
+        }
+
+        // Scan full 16-element board using OpenCV multi-channel detector (without dumping 16 lines on every iteration)
+        val shouldLogFullTable = isManualScan || (hasScannedInitialBoardOnce == false)
+        val report = OpenCvVisionScanner.scanResourceHuntBoard(bitmap, ocrLines, logToUi = shouldLogFullTable)
+        if (shouldLogFullTable) {
+            hasScannedInitialBoardOnce = true
+        }
+        bitmap.recycle()
+
+        // Check for target items
+        val targetName = config.targetItemName.trim().lowercase()
+        val matchingAvailableSlots = report.detectedSlots.filter { slot ->
+            !slot.isBought && (
+                slot.resourceName.lowercase().contains(targetName) ||
+                (targetName.contains("мед") && slot.resourceName.contains("Медь")) ||
+                (targetName.contains("золот") && slot.resourceName.contains("Золото")) ||
+                (targetName.contains("серебр") && slot.resourceName.contains("Серебро")) ||
+                (targetName.contains("руд") && slot.resourceName.contains("Руда")) ||
+                (targetName.contains("изумруд") && slot.resourceName.contains("Изумруд")) ||
+                (targetName.contains("emerald") && slot.resourceName.contains("Изумруд")) ||
+                (targetName.contains("эль") && slot.resourceName.contains("Эль")) ||
+                (targetName.contains("свиток") && slot.resourceName.contains("Свиток")) ||
+                (targetName.contains("ммт") && slot.resourceName.contains("ММТ")) ||
+                (targetName.contains("смт") && slot.resourceName.contains("СМТ")) ||
+                (targetName.contains("сапфир") && slot.resourceName.contains("Сапфир")) ||
+                (targetName.contains("рубин") && slot.resourceName.contains("Рубин"))
+            )
+        }
+
+        if (matchingAvailableSlots.isNotEmpty()) {
+            val bestSlot = matchingAvailableSlots.first()
+            val now = System.currentTimeMillis()
+            
+            if (config.enableActualBuying) {
+                AutoBuyerLogs.addLog("🎯 [ЦЕЛЬ НАЙДЕНА] Слот #${bestSlot.slotIndex + 1}: ${bestSlot.resourceName} (X: ${bestSlot.centerX.toInt()}, Y: ${bestSlot.centerY.toInt()})")
+                AutoBuyerLogs.addLog("👉 [РЕАЛЬНАЯ ПОКУПКА] Кликаем по слоту #${bestSlot.slotIndex + 1}...")
+                clickAtWithRandomization(bestSlot.centerX * scaleX, bestSlot.centerY * scaleY, config)
+                
+                try {
+                    db.purchaseDao().insertPurchase(
+                        PurchaseRecord(
+                            timestamp = System.currentTimeMillis(),
+                            itemName = bestSlot.resourceName,
+                            price = config.priceThreshold,
+                            quantity = bestSlot.quantityValue ?: 1.0,
+                            details = "Слот #${bestSlot.slotIndex + 1} (Ряд ${bestSlot.row + 1}, Кол ${bestSlot.col + 1})"
+                        )
+                    )
+                    registerPurchaseSuccess()
+                } catch (e: Exception) {
+                    AutoBuyerLogs.addLog("⚠️ Ошибка записи покупки: ${e.message}")
+                }
+                
+                // Pause slightly to verify confirmation dialog
+                delay(800)
+            } else {
+                // In monitoring mode, throttle log to once every 4 seconds to avoid spamming
+                if (now - lastMonitoringLogTimestamp > 4000L || isManualScan) {
+                    lastMonitoringLogTimestamp = now
+                    AutoBuyerLogs.addLog("🎯 [ЦЕЛЬ НАЙДЕНА] Слот #${bestSlot.slotIndex + 1}: ${bestSlot.resourceName} (X: ${bestSlot.centerX.toInt()}, Y: ${bestSlot.centerY.toInt()})")
+                    AutoBuyerLogs.addLog("ℹ️ [РЕЖИМ МОНИТОРИНГА] Цель '${bestSlot.resourceName}' обнаружена. Покупка НЕ производится ('Реальная покупка' = ВЫКЛ в настройках или оверлее).")
+                }
+            }
+        } else {
+            if (shouldLogFullTable) {
+                AutoBuyerLogs.addLog("🔍 [16 ЭЛЕМЕНТОВ] Цель '$targetName' в доступных слотах не найдена.")
+            }
+        }
+    }
+
+    /**
+     * Unity 4x4 Grid Recognition and Navigation using OpenCV:
+     * 1. Detects button '2' or 'Resource Hunt' window.
+     * 2. Runs OpenCV 16-slot multi-channel vision classification.
+     * 3. Logs full board breakdown to in-app AutoBuyerLogs & dev Logcat.
+     * 4. Pauses the bot to allow user to inspect the scan results.
      */
     private suspend fun performUnityGridScanAndAction(
         screenBitmap: Bitmap,
@@ -2201,80 +2328,40 @@ class LootBuyerAccessibilityService : AccessibilityService() {
         screenHeight: Float,
         allLines: List<com.google.mlkit.vision.text.Text.Line>
     ): Boolean {
-        val button2Line = allLines.firstOrNull { line ->
-            val t = line.text.trim()
-            t == "2" || t.contains(" 2 ") || t.contains("2.") || t.startsWith("2")
+        val isMainScreen = OpenCvVisionScanner.isMainGameScreen(allLines)
+        val isGridOpen = OpenCvVisionScanner.isResourceHuntWindowOpen(screenBitmap, allLines)
+
+        if (isMainScreen || !isGridOpen) {
+            val point2 = OpenCvVisionScanner.detectAnniversary2Button(screenBitmap, allLines)
+            val scaleX = screenWidth / screenBitmap.width
+            val scaleY = screenHeight / screenBitmap.height
+            val b2X = (point2.x * scaleX).toFloat()
+            val b2Y = (point2.y * scaleY).toFloat().coerceAtLeast(screenHeight * 0.08f)
+
+            AutoBuyerLogs.addLog("👉 [КНОПКА 2] Обнаружена кнопка '2' в координатах (${b2X.toInt()}, ${b2Y.toInt()}) через OpenCV. Кликаем для открытия окна Resource Hunt...")
+            clickAtWithRandomization(b2X, b2Y, config)
+            return true
         }
 
-        val hasGridWindowText = allLines.any { line ->
-            val t = line.text.lowercase()
-            t.contains("grid") || t.contains("16") || t.contains("элемент") || t.contains("выберите") || t.contains("select")
-        }
+        AutoBuyerLogs.addLog("🔍 [OPENCV] Окно 'Resource Hunt' обнаружено. Запуск анализа 16 слотов через OpenCV...")
 
-        if (button2Line != null && !hasGridWindowText) {
-            val bounds = button2Line.boundingBox
-            if (bounds != null) {
-                val scaleX = screenWidth / screenBitmap.width
-                val scaleY = screenHeight / screenBitmap.height
-                val b2X = bounds.centerX() * scaleX
-                val b2Y = bounds.centerY() * scaleY
-
-                AutoBuyerLogs.addLog("👉 [КНОПКА 2] Обнаружена кнопка '2' в координатах (${b2X.toInt()}, ${b2Y.toInt()}). Кликаем для открытия окна 4x4...")
-                clickAtWithRandomization(b2X, b2Y, config)
-                return true
-            }
-        }
-
-        gridDetector.loadSavedElementTemplates(applicationContext, forceReload = false)
-
-        val targetSlot = gridDetector.findMatchingSlotInGrid(
+        // Execute OpenCV 16-Slot Multi-Channel Vision Scanner
+        val report = OpenCvVisionScanner.scanResourceHuntBoard(
             screenBitmap = screenBitmap,
-            screenWidth = screenWidth,
-            screenHeight = screenHeight,
-            targetElementName = config.targetItemName,
-            minThreshold = 0.60f
+            ocrLines = allLines
         )
 
-        if (targetSlot != null) {
-            AutoBuyerLogs.addLog("🎯 [4x4 GRID] Обнаружен целевой элемент '${config.targetItemName}' в ячейке #${targetSlot.index + 1} " +
-                    "(Строка ${targetSlot.row + 1}, Колонка ${targetSlot.col + 1}) с совпадением ${(targetSlot.similarity * 100).toInt()}%!")
-
-            if (config.enableActualBuying) {
-                AutoBuyerLogs.addLog("👉 [4x4 GRID] Кликаем по элементу в ячейке #${targetSlot.index + 1} в координатах (${targetSlot.screenX.toInt()}, ${targetSlot.screenY.toInt()})")
-                clickAtWithRandomization(targetSlot.screenX, targetSlot.screenY, config)
-
-                try {
-                    val db = AppDatabase.getDatabase(this@LootBuyerAccessibilityService)
-                    db.purchaseDao().insertPurchase(
-                        PurchaseRecord(
-                            timestamp = System.currentTimeMillis(),
-                            itemName = config.targetItemName,
-                            price = config.priceThreshold,
-                            quantity = 1.0,
-                            details = "Выбран элемент из 4x4 сетки: ячейка #${targetSlot.index + 1}"
-                        )
-                    )
-                    registerPurchaseSuccess()
-                } catch (e: Exception) {
-                    AutoBuyerLogs.addLog("⚠️ Ошибка записи покупки: ${e.message}")
-                }
-            } else {
-                AutoBuyerLogs.addLog("🎉 [МОНИТОРИНГ] Найдена ячейка #${targetSlot.index + 1} с элементом '${config.targetItemName}'. Покупка пропущена (режим только логирования).")
-            }
-            return true
-        } else if (hasGridWindowText) {
-            AutoBuyerLogs.addLog("❌ [4x4 GRID] В открытом окне 4x4 (16 элементов) не найден целевой элемент '${config.targetItemName}'.")
-
-            val (closeX, closeY) = gridDetector.getCloseButtonCoordinates(
-                screenWidth = screenWidth,
-                screenHeight = screenHeight
-            )
-
-            AutoBuyerLogs.addLog("👉 [4x4 GRID] Кликаем на крестик сверху слева в координатах (${closeX.toInt()}, ${closeY.toInt()}) для закрытия окна...")
-            clickAtWithRandomization(closeX, closeY, config)
-            return true
+        // Stop/pause after scanning as requested to verify correctness
+        AutoBuyerLogs.addLog("🛑 [ПРОВЕРКА OPENCV] Сканирование доски завершено. Бот остановлен для проверки результатов в логах.")
+        android.util.Log.i("OpenCvVision", "🛑 [ПРОВЕРКА OPENCV] Сканирование завершено. Бот остановлен.")
+        
+        try {
+            val db = AppDatabase.getDatabase(this@LootBuyerAccessibilityService)
+            db.configurationDao().updateAutoBuyEnabled(false)
+        } catch (e: Exception) {
+            AutoBuyerLogs.addLog("⚠️ Ошибка обновления статуса бота: ${e.message}")
         }
 
-        return false
+        return true
     }
 }

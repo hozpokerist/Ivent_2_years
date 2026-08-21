@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "Ivent_2_years",
+  "description": "Auto-buyer and loot detector for event items with 4x4 grid recognition and cycle scanning.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

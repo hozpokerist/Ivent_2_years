@@ -1,23 +1,22 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 
 plugins {
-  id("com.android.application")
-  id("org.jetbrains.kotlin.android")
-  id("org.jetbrains.kotlin.plugin.compose")
-  id("com.google.devtools.ksp")
-  id("io.github.takahirom.roborazzi")
-  id("com.google.android.libraries.mapsplatform.secrets-gradle-plugin")
-  id("com.google.gms.google-services")
+  alias(libs.plugins.android.application)
+  alias(libs.plugins.kotlin.compose)
+  alias(libs.plugins.google.devtools.ksp)
+  alias(libs.plugins.roborazzi)
+  alias(libs.plugins.secrets)
+  alias(libs.plugins.google.services)
 }
 
 android {
   namespace = "com.example"
-  compileSdk = 35
+  compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
     applicationId = "com.aistudio.autoclicker.pxfvd"
     minSdk = 24
-    targetSdk = 35
+    targetSdk = 36
     versionCode = 1
     versionName = "1.0"
 
@@ -32,10 +31,10 @@ android {
       keyAlias = "upload"
       keyPassword = System.getenv("KEY_PASSWORD")
     }
-    create("debugConfig") {
-      val keystore = file("${rootDir}/debug.keystore")
-      if (keystore.exists()) {
-        storeFile = keystore
+    getByName("debug") {
+      val customDebugKeystore = file("${rootDir}/debug.keystore")
+      if (customDebugKeystore.exists()) {
+        storeFile = customDebugKeystore
         storePassword = "android"
         keyAlias = "androiddebugkey"
         keyPassword = "android"
@@ -51,34 +50,22 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      if (file("${rootDir}/debug.keystore").exists()) {
-        signingConfig = signingConfigs.getByName("debugConfig")
-      }
+      signingConfig = signingConfigs.getByName("debug")
     }
   }
   compileOptions {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
-  }
-  @Suppress("DEPRECATION")
-  kotlinOptions {
-    jvmTarget = "21"
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
   }
   buildFeatures {
     compose = true
     buildConfig = true
   }
-
-  sourceSets {
-    getByName("main") {
-      res.srcDirs("src/main/res")
-    }
-  }
-
-  androidResources {
-    noCompress += listOf("png", "webp")
-  }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+  dependenciesInfo {
+    includeInApk = false
+    includeInBundle = true
+  }
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
@@ -86,58 +73,74 @@ android {
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
+  ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
 }
 
-googleServices {
-  missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN
-}
+googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
 
+// Some unused dependencies are commented out below instead of being removed.
+// This makes it easy to add them back in the future if needed.
 dependencies {
-  implementation(platform("com.google.firebase:firebase-bom:34.15.0"))
-  implementation(platform("androidx.compose:compose-bom:2024.09.00"))
-  implementation("androidx.activity:activity-compose:1.10.1")
-  implementation("androidx.compose.material:material-icons-core")
-  implementation("androidx.compose.material:material-icons-extended")
-  implementation("androidx.compose.material3:material3")
-  implementation("androidx.compose.ui:ui")
-  implementation("androidx.compose.ui:ui-graphics")
-  implementation("androidx.compose.ui:ui-tooling-preview")
-  implementation("androidx.core:core-ktx:1.15.0")
-  implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
-  implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-  implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-  implementation("androidx.room:room-ktx:2.7.0")
-  implementation("androidx.room:room-runtime:2.7.0")
-  implementation("com.squareup.retrofit2:converter-moshi:2.12.0")
-  implementation("com.google.firebase:firebase-ai")
-  implementation("com.google.firebase:firebase-appcheck-recaptcha")
-  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-  implementation("com.squareup.okhttp3:logging-interceptor:4.10.0")
-  implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
-  implementation("com.squareup.okhttp3:okhttp:4.10.0")
-  implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
-  implementation("com.squareup.retrofit2:retrofit:2.12.0")
+  implementation(platform(libs.androidx.compose.bom))
+  implementation(platform(libs.firebase.bom))
+  // implementation(libs.accompanist.permissions)
+  implementation(libs.androidx.activity.compose)
+  // implementation(libs.androidx.camera.camera2)
+  // implementation(libs.androidx.camera.core)
+  // implementation(libs.androidx.camera.lifecycle)
+  // implementation(libs.androidx.camera.view)
+  implementation(libs.androidx.compose.material.icons.core)
+  implementation(libs.androidx.compose.material.icons.extended)
+  implementation(libs.androidx.compose.material3)
+  implementation(libs.androidx.compose.ui)
+  implementation(libs.androidx.compose.ui.graphics)
+  implementation(libs.androidx.compose.ui.tooling.preview)
+  implementation(libs.androidx.core.ktx)
+  // implementation(libs.androidx.datastore.preferences)
+  implementation(libs.androidx.lifecycle.runtime.compose)
+  implementation(libs.androidx.lifecycle.runtime.ktx)
+  implementation(libs.androidx.lifecycle.viewmodel.compose)
+  // implementation(libs.androidx.navigation.compose)
+  implementation(libs.androidx.room.ktx)
+  implementation(libs.androidx.room.runtime)
+  // implementation(libs.coil.compose)
+  implementation(libs.converter.moshi)
+  implementation(libs.firebase.ai)
+  // Uncomment to use Firestore:
+  // implementation(libs.firebase.firestore)
 
-  testImplementation("androidx.compose.ui:ui-test-junit4")
-  testImplementation("androidx.test:core:1.6.1")
-  testImplementation("androidx.test.ext:junit:1.3.0")
-  testImplementation("junit:junit:4.13.2")
-  testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
-  testImplementation("org.robolectric:robolectric:4.16.1")
-  testImplementation("io.github.takahirom.roborazzi:roborazzi:1.59.0")
-  testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.59.0")
-  testImplementation("io.github.takahirom.roborazzi:roborazzi-junit-rule:1.59.0")
-
-  androidTestImplementation(platform("androidx.compose:compose-bom:2024.09.00"))
-  androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-  androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
-  androidTestImplementation("androidx.test.ext:junit:1.3.0")
-  androidTestImplementation("androidx.test:runner:1.6.2")
-
-  debugImplementation("androidx.compose.ui:ui-test-manifest")
-  debugImplementation("androidx.compose.ui:ui-tooling")
-
-  "ksp"("androidx.room:room-compiler:2.7.0")
-  "ksp"("com.squareup.moshi:moshi-kotlin-codegen:1.15.2")
+  // Uncomment ALL FOUR of the following dependencies together to use Firebase Auth and Google
+  // Sign-In via Credential Manager:
+  // implementation(libs.firebase.auth)
+  // implementation(libs.androidx.credentials)
+  // implementation(libs.androidx.credentials.play.services)
+  // implementation(libs.googleid)
+  implementation(libs.firebase.appcheck.recaptcha)
+  implementation(libs.kotlinx.coroutines.android)
+  implementation(libs.kotlinx.coroutines.core)
+  implementation(libs.logging.interceptor)
+  implementation(libs.moshi.kotlin)
+  implementation(libs.okhttp)
+  implementation(libs.play.services.mlkit.text.recognition)
+  implementation(libs.opencv)
+  // implementation(libs.play.services.location)
+  implementation(libs.retrofit)
+  testImplementation(libs.androidx.compose.ui.test.junit4)
+  testImplementation(libs.androidx.core)
+  testImplementation(libs.androidx.junit)
+  testImplementation(libs.junit)
+  testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.robolectric)
+  testImplementation(libs.roborazzi)
+  testImplementation(libs.roborazzi.compose)
+  testImplementation(libs.roborazzi.junit.rule)
+  androidTestImplementation(platform(libs.androidx.compose.bom))
+  androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+  androidTestImplementation(libs.androidx.espresso.core)
+  androidTestImplementation(libs.androidx.junit)
+  androidTestImplementation(libs.androidx.runner)
+  debugImplementation(libs.androidx.compose.ui.test.manifest)
+  debugImplementation(libs.androidx.compose.ui.tooling)
+  "ksp"(libs.androidx.room.compiler)
+  "ksp"(libs.moshi.kotlin.codegen)
 }
