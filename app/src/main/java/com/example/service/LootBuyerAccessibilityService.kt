@@ -62,6 +62,7 @@ class LootBuyerAccessibilityService : AccessibilityService() {
     @Volatile private var cycleInitialized = false
     @Volatile private var hasScannedInitialBoardOnce = false
     @Volatile private var lastMonitoringLogTimestamp = 0L
+    @Volatile private var previouslyBoughtSlots: Set<Int> = emptySet()
 
     private fun registerPurchaseSuccess() {
         purchasesThisCycleRun++
@@ -2252,6 +2253,30 @@ class LootBuyerAccessibilityService : AccessibilityService() {
             hasScannedInitialBoardOnce = true
         }
 
+        // Calculate currently bought slot indices (0..15)
+        val currentBoughtSlots = report.detectedSlots
+            .filter { it.isBought || it.resourceName == OpenCvVisionScanner.RES_BOUGHT }
+            .map { it.slotIndex }
+            .toSet()
+
+        // Check if lots have refreshed (reset):
+        // If there were any bought slots recorded previously (even 1 slot), and now any of those slots is NO LONGER bought:
+        val wereAnyPreviouslyBought = previouslyBoughtSlots.isNotEmpty()
+        val anyPreviouslyBoughtNowAvailable = wereAnyPreviouslyBought && previouslyBoughtSlots.any { prevSlotIdx ->
+            val curSlot = report.detectedSlots.find { it.slotIndex == prevSlotIdx }
+            curSlot != null && !curSlot.isBought && curSlot.resourceName != OpenCvVisionScanner.RES_BOUGHT
+        }
+        val isLotsRefreshed = wereAnyPreviouslyBought && (anyPreviouslyBoughtNowAvailable || (currentBoughtSlots.size < previouslyBoughtSlots.size && currentBoughtSlots.isEmpty()))
+
+        if (isLotsRefreshed) {
+            val freedSlotsStr = previouslyBoughtSlots.filter { prevSlotIdx ->
+                val curSlot = report.detectedSlots.find { it.slotIndex == prevSlotIdx }
+                curSlot != null && !curSlot.isBought && curSlot.resourceName != OpenCvVisionScanner.RES_BOUGHT
+            }.map { "#${it + 1}" }.joinToString(", ")
+            val detail = if (freedSlotsStr.isNotEmpty()) "Слоты ($freedSlotsStr) освободились" else "Все 16 ячеек снова доступны"
+            AutoBuyerLogs.addLog("🔄 [ЛОТЫ ОБНОВИЛИСЬ] Обнаружено обновление ячеек! $detail.")
+        }
+
         // Check for target items
         // Parse multiple targets (comma-separated, e.g. "Медь, Золото, Руда")
         val rawTargets = config.targetItemName
@@ -2347,12 +2372,50 @@ class LootBuyerAccessibilityService : AccessibilityService() {
                     AutoBuyerLogs.addLog("ℹ️ [РЕЖИМ МОНИТОРИНГА] Цель '${bestSlot.resourceName}' обнаружена. Покупка НЕ производится ('Реальная покупка' = ВЫКЛ в настройках или оверлее).")
                 }
             }
+        } else {
+            if (shouldLogFullTable) {
+                val targetsDesc = if (rawTargets.isEmpty()) "Супер-приоритет (Гном, Покрывало, Лицензия)" else rawTargets.joinToString(", ")
+                AutoBuyerLogs.addLog("🔍 [16 ЭЛЕМЕНТОВ] Цели ($targetsDesc) в доступных слотах не найдены.")
+            }
+        }
 
-            // In continuous loop: after processing target slot, refresh the grid
-            if (!isManualScan) {
-                val closePoint = OpenCvVisionScanner.detectResourceHuntCloseButton(bitmap, ocrLines)
-                val closeX = (closePoint.x * scaleX).toFloat()
-                val closeY = (closePoint.y * scaleY).toFloat()
+        // Post-scan / Post-action loop execution:
+        if (!isManualScan) {
+            val closePoint = OpenCvVisionScanner.detectResourceHuntCloseButton(bitmap, ocrLines)
+            val closeX = (closePoint.x * scaleX).toFloat()
+            val closeY = (closePoint.y * scaleY).toFloat()
+
+            if (isLotsRefreshed) {
+                // If lots have refreshed: Close window, wait randomly from 40 to 49 seconds, then start next cycle!
+                AutoBuyerLogs.addLog("❌ [ОБНОВЛЕНИЕ ЛОТОВ] Закрываем окно (крестик 'X': X: ${closeX.toInt()}, Y: ${closeY.toInt()})...")
+                clickAtWithRandomization(closeX, closeY, config)
+                
+                previouslyBoughtSlots = currentBoughtSlots
+                val waitSec = (40..49).random()
+                AutoBuyerLogs.addLog("⏳ [ОЖИДАНИЕ НОВОГО ЦИКЛА] Лоты обновились. Окно закрыто. Ожидаем $waitSec сек (40-49 сек) перед началом следующего цикла...")
+                
+                // Reset search cycle timing so next cycle starts cleanly
+                cycleInitialized = false
+                if (currentCycleNumber < 3) {
+                    currentCycleNumber++
+                } else {
+                    currentCycleNumber = 1
+                }
+
+                delay(waitSec * 1000L)
+
+                val point2 = OpenCvVisionScanner.detectAnniversary2Button(bitmap, ocrLines)
+                val b2X = (point2.x * scaleX).toFloat()
+                val b2Y = (point2.y * scaleY).toFloat().coerceAtLeast(screenHeight * 0.08f)
+
+                AutoBuyerLogs.addLog("👉 [КНОПКА 2] Запуск следующего цикла: повторно открываем Resource Hunt (X: ${b2X.toInt()}, Y: ${b2Y.toInt()})...")
+                clickAtWithRandomization(b2X, b2Y, config)
+                delay(2000)
+            } else {
+                // Lots have not refreshed: store current bought slots, close window and reopen after 1s to refresh board
+                if (currentBoughtSlots.isNotEmpty()) {
+                    previouslyBoughtSlots = currentBoughtSlots
+                }
 
                 AutoBuyerLogs.addLog("🔄 [ОБНОВЛЕНИЕ СЕТКИ] Закрываем окно (крестик 'X': X: ${closeX.toInt()}, Y: ${closeY.toInt()})...")
                 clickAtWithRandomization(closeX, closeY, config)
@@ -2362,31 +2425,7 @@ class LootBuyerAccessibilityService : AccessibilityService() {
                 val b2X = (point2.x * scaleX).toFloat()
                 val b2Y = (point2.y * scaleY).toFloat().coerceAtLeast(screenHeight * 0.08f)
 
-                AutoBuyerLogs.addLog("👉 [КНОПКА 2] Повторно открываем Resource Hunt через 1 сек (X: ${b2X.toInt()}, Y: ${b2Y.toInt()})...")
-                clickAtWithRandomization(b2X, b2Y, config)
-                delay(2000)
-            }
-        } else {
-            if (shouldLogFullTable) {
-                val targetsDesc = if (rawTargets.isEmpty()) "Супер-приоритет (Гном, Покрывало, Лицензия)" else rawTargets.joinToString(", ")
-                AutoBuyerLogs.addLog("🔍 [16 ЭЛЕМЕНТОВ] Цели ($targetsDesc) в доступных слотах не найдены.")
-            }
-
-            // In continuous loop: if no targets found, refresh the board by closing and reopening after 1 second
-            if (!isManualScan) {
-                val closePoint = OpenCvVisionScanner.detectResourceHuntCloseButton(bitmap, ocrLines)
-                val closeX = (closePoint.x * scaleX).toFloat()
-                val closeY = (closePoint.y * scaleY).toFloat()
-
-                AutoBuyerLogs.addLog("🔄 [ОБНОВЛЕНИЕ СЕТКИ] Нужные лоты не найдены. Закрываем окно (крестик 'X': X: ${closeX.toInt()}, Y: ${closeY.toInt()})...")
-                clickAtWithRandomization(closeX, closeY, config)
-                delay(1000)
-
-                val point2 = OpenCvVisionScanner.detectAnniversary2Button(bitmap, ocrLines)
-                val b2X = (point2.x * scaleX).toFloat()
-                val b2Y = (point2.y * scaleY).toFloat().coerceAtLeast(screenHeight * 0.08f)
-
-                AutoBuyerLogs.addLog("👉 [КНОПКА 2] Повторно открываем Resource Hunt через 1 сек для обновления 16 ячеек (X: ${b2X.toInt()}, Y: ${b2Y.toInt()})...")
+                AutoBuyerLogs.addLog("👉 [КНОПКА 2] Повторно открываем Resource Hunt через 1 сек для проверки/обновления ячеек (X: ${b2X.toInt()}, Y: ${b2Y.toInt()})...")
                 clickAtWithRandomization(b2X, b2Y, config)
                 delay(2000)
             }
