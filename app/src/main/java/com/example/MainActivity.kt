@@ -261,32 +261,51 @@ fun DashboardTab(
             ),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (config.autoBuyEnabled) "🟢 Бот активен" else "⚪ Бот выключен",
+                            text = if (config.autoBuyEnabled) "🟢 Бот активен" else "⚪ Бот в режиме ожидания",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = if (config.autoBuyEnabled) "Выполняется автопоиск и сканирование" else "Переключите тумблер для старта",
+                            text = if (config.autoBuyEnabled) 
+                                "Выполняется автопоиск и сканирование сетки" 
+                                else "Нажмите кнопку ниже для появления плавающего кружка. Запуск производится кликом по кружку на экране игры!",
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
-                    Switch(
-                        checked = config.autoBuyEnabled,
-                        onCheckedChange = { onToggleAutoBuy() },
-                        modifier = Modifier.testTag("switch_auto_buy")
-                    )
+                }
+
+                if (!config.autoBuyEnabled) {
+                    Button(
+                        onClick = onToggleAutoBuy,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.fillMaxWidth().testTag("btn_start_bot_overlay")
+                    ) {
+                        Icon(Icons.Default.PlayCircle, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("🚀 Запустить бота (Показать кружок)", fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Button(
+                        onClick = onToggleAutoBuy,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth().testTag("btn_stop_bot")
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("⏹ Остановить бота", fontWeight = FontWeight.Bold)
+                    }
                 }
 
                 if (cooldownMs > 0L) {
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                         modifier = Modifier.fillMaxWidth()
@@ -315,6 +334,66 @@ fun DashboardTab(
                                 Text("Сброс")
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // Speed & Timing Settings Card for Button 2 and Close X
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("⏱️ Скорость клика на '2' и закрытия на крестик 'X'", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "Настройте время задержки между закрытием окна по крестику 'X' и повторным открытием кнопкой '2':",
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = config.gridCloseDelayMs.toString(),
+                        onValueChange = { onUpdateConfig(config.copy(gridCloseDelayMs = it.toLongOrNull() ?: 1000L)) },
+                        label = { Text("Пауза после 'X' (мс)") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        supportingText = { Text("Перед нажатием на '2'") }
+                    )
+                    OutlinedTextField(
+                        value = config.gridOpenDelayMs.toString(),
+                        onValueChange = { onUpdateConfig(config.copy(gridOpenDelayMs = it.toLongOrNull() ?: 2000L)) },
+                        label = { Text("Пауза после '2' (мс)") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        supportingText = { Text("Загрузка 16 ячеек") }
+                    )
+                }
+
+                // Quick presets
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Пресеты:", style = MaterialTheme.typography.labelSmall)
+                    FilledTonalButton(
+                        onClick = { onUpdateConfig(config.copy(gridCloseDelayMs = 500L, gridOpenDelayMs = 1200L)) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("⚡ Быстро (0.5с/1.2с)", fontSize = 10.sp, maxLines = 1)
+                    }
+                    FilledTonalButton(
+                        onClick = { onUpdateConfig(config.copy(gridCloseDelayMs = 1000L, gridOpenDelayMs = 2000L)) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("⚖️ Норм (1.0с/2.0с)", fontSize = 10.sp, maxLines = 1)
+                    }
+                    FilledTonalButton(
+                        onClick = { onUpdateConfig(config.copy(gridCloseDelayMs = 1500L, gridOpenDelayMs = 2500L)) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("🛡️ Плавный (1.5с/2.5с)", fontSize = 10.sp, maxLines = 1)
                     }
                 }
             }
@@ -1012,6 +1091,33 @@ fun CalibrationTab(
                 }
                 CoordinateRow("Сок", config.calibratedSapX, config.calibratedSapY) { x, y ->
                     onUpdateConfig(config.copy(calibratedSapX = x, calibratedSapY = y))
+                }
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("⏱️ Скорость сетки 4x4 (Кнопка '2' ↔ Крестик 'X')", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "Задержки между нажатиями при поиске и обновлении 16 ячеек Resource Hunt:",
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = config.gridCloseDelayMs.toString(),
+                        onValueChange = { onUpdateConfig(config.copy(gridCloseDelayMs = it.toLongOrNull() ?: 1000L)) },
+                        label = { Text("Пауза после 'X' (мс)") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = config.gridOpenDelayMs.toString(),
+                        onValueChange = { onUpdateConfig(config.copy(gridOpenDelayMs = it.toLongOrNull() ?: 2000L)) },
+                        label = { Text("Пауза после '2' (мс)") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
                 }
             }
         }

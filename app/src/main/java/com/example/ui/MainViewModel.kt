@@ -97,34 +97,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun launchOverlayCircle() {
+        val context = getApplication<Application>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(context)) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                android.net.Uri.parse("package:${context.packageName}")
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            AutoBuyerLogs.addLog("⚠️ [ОВЕРЛЕЙ] Предоставьте разрешение на отображение поверх других окон")
+            return
+        }
+
+        val overlayIntent = Intent(context, OverlayControlService::class.java).apply {
+            action = OverlayControlService.ACTION_START
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(overlayIntent)
+        } else {
+            context.startService(overlayIntent)
+        }
+        AutoBuyerLogs.addLog("🔘 [КРУЖОК ГОТОВ] Плавающий кружок появился на экране. Перейдите в игру и коснитесь кружка для запуска!")
+    }
+
     fun toggleAutoBuy() {
         viewModelScope.launch {
             val current = db.configurationDao().getConfiguration() ?: config.value
-            val newStatus = !current.autoBuyEnabled
-            val updated = current.copy(autoBuyEnabled = newStatus)
-            db.configurationDao().saveConfiguration(updated)
+            val isCurrentlyRunning = current.autoBuyEnabled
 
             val context = getApplication<Application>()
 
-            if (newStatus) {
-                LootBuyerAccessibilityService.instance?.startAutomation()
-                val mode = if (updated.enableActualBuying) "⚡ РЕАЛЬНАЯ ПОКУПКА (ВЫКУП ВКЛЮЧЕН)" else "👁 ТОЛЬКО МОНИТОРИНГ (Покупка ВЫКЛЮЧЕНА)"
-                AutoBuyerLogs.addLog("▶ [UI] Бот ЗАПУЩЕН пользователем. Режим: $mode")
-
-                // Automatically launch floating circle overlay if overlay permission is granted
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)) {
-                    val overlayIntent = Intent(context, OverlayControlService::class.java).apply {
-                        action = OverlayControlService.ACTION_START
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        context.startForegroundService(overlayIntent)
-                    } else {
-                        context.startService(overlayIntent)
-                    }
-                }
-            } else {
+            if (isCurrentlyRunning) {
+                // If running, stop it
+                val updated = current.copy(autoBuyEnabled = false)
+                db.configurationDao().saveConfiguration(updated)
                 LootBuyerAccessibilityService.instance?.stopAutomation()
                 AutoBuyerLogs.addLog("⏹ [UI] Автопокупка остановлена пользователем")
+            } else {
+                // If not running, launch overlay circle so user can switch to game and tap circle there!
+                launchOverlayCircle()
             }
         }
     }

@@ -2239,10 +2239,11 @@ class LootBuyerAccessibilityService : AccessibilityService() {
             val b2X = (point2.x * scaleX).toFloat()
             val b2Y = (point2.y * scaleY).toFloat().coerceAtLeast(screenHeight * 0.08f) // Strictly below Android status bar
 
+            val openDelay = config.gridOpenDelayMs.coerceIn(300L, 10000L)
             AutoBuyerLogs.addLog("👉 [КНОПКА 2] Открываем окно Resource Hunt: нажимаем на кнопку '2' (X: ${b2X.toInt()}, Y: ${b2Y.toInt()}) через OpenCV...")
             clickAtWithRandomization(b2X, b2Y, config)
             bitmap.recycle()
-            delay(2500)
+            delay(openDelay)
             return@withContext
         }
 
@@ -2385,6 +2386,9 @@ class LootBuyerAccessibilityService : AccessibilityService() {
             val closeX = (closePoint.x * scaleX).toFloat()
             val closeY = (closePoint.y * scaleY).toFloat()
 
+            val closeDelay = config.gridCloseDelayMs.coerceIn(200L, 10000L)
+            val openDelay = config.gridOpenDelayMs.coerceIn(300L, 10000L)
+
             if (isLotsRefreshed) {
                 // If lots have refreshed: Close window, wait randomly from 40 to 49 seconds, then start next cycle!
                 AutoBuyerLogs.addLog("❌ [ОБНОВЛЕНИЕ ЛОТОВ] Закрываем окно (крестик 'X': X: ${closeX.toInt()}, Y: ${closeY.toInt()})...")
@@ -2410,24 +2414,24 @@ class LootBuyerAccessibilityService : AccessibilityService() {
 
                 AutoBuyerLogs.addLog("👉 [КНОПКА 2] Запуск следующего цикла: повторно открываем Resource Hunt (X: ${b2X.toInt()}, Y: ${b2Y.toInt()})...")
                 clickAtWithRandomization(b2X, b2Y, config)
-                delay(2000)
+                delay(openDelay)
             } else {
-                // Lots have not refreshed: store current bought slots, close window and reopen after 1s to refresh board
+                // Lots have not refreshed: store current bought slots, close window and reopen after closeDelay to refresh board
                 if (currentBoughtSlots.isNotEmpty()) {
                     previouslyBoughtSlots = currentBoughtSlots
                 }
 
                 AutoBuyerLogs.addLog("🔄 [ОБНОВЛЕНИЕ СЕТКИ] Закрываем окно (крестик 'X': X: ${closeX.toInt()}, Y: ${closeY.toInt()})...")
                 clickAtWithRandomization(closeX, closeY, config)
-                delay(1000)
+                delay(closeDelay)
 
                 val point2 = OpenCvVisionScanner.detectAnniversary2Button(bitmap, ocrLines)
                 val b2X = (point2.x * scaleX).toFloat()
                 val b2Y = (point2.y * scaleY).toFloat().coerceAtLeast(screenHeight * 0.08f)
 
-                AutoBuyerLogs.addLog("👉 [КНОПКА 2] Повторно открываем Resource Hunt через 1 сек для проверки/обновления ячеек (X: ${b2X.toInt()}, Y: ${b2Y.toInt()})...")
+                AutoBuyerLogs.addLog("👉 [КНОПКА 2] Повторно открываем Resource Hunt через ${closeDelay} мс для проверки/обновления ячеек (X: ${b2X.toInt()}, Y: ${b2Y.toInt()})...")
                 clickAtWithRandomization(b2X, b2Y, config)
-                delay(2000)
+                delay(openDelay)
             }
         }
         bitmap.recycle()
