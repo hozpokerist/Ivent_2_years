@@ -25,6 +25,19 @@ object AutoBuyerLogs {
         }
     }
 
+    fun addLogsBatch(messages: List<String>) {
+        if (messages.isEmpty()) return
+        val time = timeFormat.format(Date())
+        val formatted = messages.map { "[$time] $it" }
+        val current = _logs.value.toMutableList()
+        current.addAll(0, formatted)
+        if (current.size > MAX_LOGS) {
+            _logs.value = current.subList(0, MAX_LOGS)
+        } else {
+            _logs.value = current
+        }
+    }
+
     fun clearLogs() {
         _logs.value = emptyList()
     }

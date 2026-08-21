@@ -392,11 +392,15 @@ fun DashboardTab(
                 )
 
                 // Quick item presets
-                val allResources = listOf("Медь", "Серебро", "Золото", "ММТ", "СМТ", "Руда", "Изумруд", "Рубин", "Сапфир", "Свиток", "Эль")
+                val allResources = listOf(
+                    "Медь", "Серебро", "Золото", "Руда",
+                    "Гном", "Белое покрывало", "Лицензия",
+                    "Изумруд", "Рубин", "Сапфир", "ММТ", "СМТ", "Свиток", "Эль"
+                )
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Быстрый выбор ресурса:", style = MaterialTheme.typography.labelMedium)
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        allResources.take(5).forEach { item ->
+                        allResources.take(4).forEach { item ->
                             FilterChip(
                                 selected = config.targetItemName.equals(item, ignoreCase = true),
                                 onClick = { onUpdateConfig(config.copy(targetItemName = item)) },
@@ -405,7 +409,25 @@ fun DashboardTab(
                         }
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        allResources.drop(5).forEach { item ->
+                        allResources.subList(4, 7).forEach { item ->
+                            FilterChip(
+                                selected = config.targetItemName.equals(item, ignoreCase = true),
+                                onClick = { onUpdateConfig(config.copy(targetItemName = item)) },
+                                label = { Text("⭐ $item", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                            )
+                        }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        allResources.drop(7).take(4).forEach { item ->
+                            FilterChip(
+                                selected = config.targetItemName.equals(item, ignoreCase = true),
+                                onClick = { onUpdateConfig(config.copy(targetItemName = item)) },
+                                label = { Text(item, fontSize = 12.sp) }
+                            )
+                        }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        allResources.drop(11).forEach { item ->
                             FilterChip(
                                 selected = config.targetItemName.equals(item, ignoreCase = true),
                                 onClick = { onUpdateConfig(config.copy(targetItemName = item)) },

@@ -2255,9 +2255,23 @@ class LootBuyerAccessibilityService : AccessibilityService() {
 
         // Check for target items
         val targetName = config.targetItemName.trim().lowercase()
-        val matchingAvailableSlots = report.detectedSlots.filter { slot ->
+
+        // 1. Mandatory Super-Priority Items: "Гном", "Белое покрывало", "Лицензия" are ALWAYS bought if available
+        val superPrioritySlots = report.detectedSlots.filter { slot ->
+            !slot.isBought && (
+                slot.resourceName == OpenCvVisionScanner.RES_GNOME ||
+                slot.resourceName == OpenCvVisionScanner.RES_WHITE_SHROUD ||
+                slot.resourceName == OpenCvVisionScanner.RES_LICENSE
+            )
+        }
+
+        // 2. Target item selected by user
+        val targetMatchingSlots = report.detectedSlots.filter { slot ->
             !slot.isBought && (
                 slot.resourceName.lowercase().contains(targetName) ||
+                (targetName.contains("гном") && slot.resourceName.contains("Гном")) ||
+                (targetName.contains("покрывал") && slot.resourceName.contains("Белое покрывало")) ||
+                (targetName.contains("лиценз") && slot.resourceName.contains("Лицензия")) ||
                 (targetName.contains("мед") && slot.resourceName.contains("Медь")) ||
                 (targetName.contains("золот") && slot.resourceName.contains("Золото")) ||
                 (targetName.contains("серебр") && slot.resourceName.contains("Серебро")) ||
@@ -2273,12 +2287,24 @@ class LootBuyerAccessibilityService : AccessibilityService() {
             )
         }
 
+        val matchingAvailableSlots = if (superPrioritySlots.isNotEmpty()) {
+            superPrioritySlots
+        } else {
+            targetMatchingSlots
+        }
+
+        val isSuperPriorityMatch = superPrioritySlots.isNotEmpty()
+
         if (matchingAvailableSlots.isNotEmpty()) {
             val bestSlot = matchingAvailableSlots.first()
             val now = System.currentTimeMillis()
             
             if (config.enableActualBuying) {
-                AutoBuyerLogs.addLog("🎯 [ЦЕЛЬ НАЙДЕНА] Слот #${bestSlot.slotIndex + 1}: ${bestSlot.resourceName} (X: ${bestSlot.centerX.toInt()}, Y: ${bestSlot.centerY.toInt()})")
+                if (isSuperPriorityMatch) {
+                    AutoBuyerLogs.addLog("⭐ [СУПЕР-ПРИОРИТЕТ] Слот #${bestSlot.slotIndex + 1}: ${bestSlot.resourceName} (X: ${bestSlot.centerX.toInt()}, Y: ${bestSlot.centerY.toInt()}) обнаружен! Покупаем вне очереди!")
+                } else {
+                    AutoBuyerLogs.addLog("🎯 [ЦЕЛЬ НАЙДЕНА] Слот #${bestSlot.slotIndex + 1}: ${bestSlot.resourceName} (X: ${bestSlot.centerX.toInt()}, Y: ${bestSlot.centerY.toInt()})")
+                }
                 AutoBuyerLogs.addLog("👉 [РЕАЛЬНАЯ ПОКУПКА] Кликаем по слоту #${bestSlot.slotIndex + 1}...")
                 clickAtWithRandomization(bestSlot.centerX * scaleX, bestSlot.centerY * scaleY, config)
                 
@@ -2303,7 +2329,11 @@ class LootBuyerAccessibilityService : AccessibilityService() {
                 // In monitoring mode, throttle log to once every 4 seconds to avoid spamming
                 if (now - lastMonitoringLogTimestamp > 4000L || isManualScan) {
                     lastMonitoringLogTimestamp = now
-                    AutoBuyerLogs.addLog("🎯 [ЦЕЛЬ НАЙДЕНА] Слот #${bestSlot.slotIndex + 1}: ${bestSlot.resourceName} (X: ${bestSlot.centerX.toInt()}, Y: ${bestSlot.centerY.toInt()})")
+                    if (isSuperPriorityMatch) {
+                        AutoBuyerLogs.addLog("⭐ [СУПЕР-ПРИОРИТЕТ] Слот #${bestSlot.slotIndex + 1}: ${bestSlot.resourceName} (X: ${bestSlot.centerX.toInt()}, Y: ${bestSlot.centerY.toInt()})")
+                    } else {
+                        AutoBuyerLogs.addLog("🎯 [ЦЕЛЬ НАЙДЕНА] Слот #${bestSlot.slotIndex + 1}: ${bestSlot.resourceName} (X: ${bestSlot.centerX.toInt()}, Y: ${bestSlot.centerY.toInt()})")
+                    }
                     AutoBuyerLogs.addLog("ℹ️ [РЕЖИМ МОНИТОРИНГА] Цель '${bestSlot.resourceName}' обнаружена. Покупка НЕ производится ('Реальная покупка' = ВЫКЛ в настройках или оверлее).")
                 }
             }

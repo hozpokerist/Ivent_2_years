@@ -41,6 +41,9 @@ object OpenCvVisionScanner {
     const val RES_SCROLL = "Свиток"
     const val RES_SILVER = "Серебро"
     const val RES_SMT_SILVER = "СМТ"
+    const val RES_GNOME = "Гном"
+    const val RES_WHITE_SHROUD = "Белое покрывало"
+    const val RES_LICENSE = "Лицензия"
     const val RES_BOUGHT = "🚫 Куплено"
     const val RES_UNKNOWN = "❓ Неизвестно"
 
@@ -141,8 +144,8 @@ object OpenCvVisionScanner {
                 // 1. Analyze resource using OpenCV HSV & Visual Feature Classifier
                 val analysis = classifySlotWithOpenCv(slotCrop, ocrLines, slotLeft, slotTop, slotRight, slotBottom)
 
-                // 2. OCR Quantity Parsing for this slot
-                val quantityInfo = extractQuantityForSlot(slotCrop, slotLeft, slotTop, slotRight, slotBottom, ocrLines)
+                // 2. OCR Quantity Parsing for this slot with resource-aware fallback
+                val quantityInfo = extractQuantityForSlot(slotCrop, slotLeft, slotTop, slotRight, slotBottom, ocrLines, analysis.resourceName)
 
                 val isBought = analysis.resourceName == RES_BOUGHT
 
@@ -192,15 +195,18 @@ object OpenCvVisionScanner {
 
         // Post full 16-slot report to in-app AutoBuyerLogs only when requested (e.g. at start, on test, or when table changes)
         if (logToUi) {
-            AutoBuyerLogs.addLog("🧩 [СКАНИРОВАНИЕ 16 ЭЛЕМЕНТОВ] Распознано 16 слотов (Доступно: $availableCount, Куплено: $boughtCount):")
+            val uiLogs = mutableListOf<String>()
+            uiLogs.add("🧩 [СКАНИРОВАНИЕ 16 ЭЛЕМЕНТОВ] Распознано 16 слотов (Доступно: $availableCount, Куплено: $boughtCount):")
             for (line in matrixLines) {
-                AutoBuyerLogs.addLog("  $line")
+                uiLogs.add("  $line")
             }
+            // Add slots strictly in ascending order #1, #2, ... #16
             for (slot in results) {
                 val status = if (slot.isBought) "🚫 ВЫКУПЛЕН" else "✅ ДОСТУПЕН"
                 val qty = if (slot.quantityText.isNotEmpty()) " x${slot.quantityText}" else ""
-                AutoBuyerLogs.addLog("  • Слот #${slot.slotIndex + 1}: ${slot.resourceName}$qty -> $status")
+                uiLogs.add("  • Слот #${slot.slotIndex + 1}: ${slot.resourceName}$qty -> $status")
             }
+            AutoBuyerLogs.addLogsBatch(uiLogs)
         }
 
         return report
@@ -396,7 +402,7 @@ object OpenCvVisionScanner {
         slotBottom: Int = 0
     ): ClassificationRaw {
         try {
-            // Check OCR text inside slot bounds for tokens or 1000 quantity
+            // Check OCR text inside slot bounds for tokens, rare items, or 1000 quantity
             for (line in ocrLines) {
                 val box = line.boundingBox ?: continue
                 val cx = box.centerX()
@@ -404,6 +410,12 @@ object OpenCvVisionScanner {
                 if (cx in slotLeft..slotRight && cy in slotTop..slotBottom) {
                     val t = line.text.lowercase().trim()
                     when {
+                        t.contains("гном") || t.contains("gnome") || t.contains("dwarf") -> 
+                            return ClassificationRaw(RES_GNOME, 0.99f, "OCR confirmed gnome")
+                        t.contains("покрывал") || t.contains("белое") || t.contains("blanket") || t.contains("shroud") ->
+                            return ClassificationRaw(RES_WHITE_SHROUD, 0.99f, "OCR confirmed white shroud")
+                        t.contains("лиценз") || t.contains("license") || t.contains("licence") || t.contains("грамот") || t.contains("договор") ->
+                            return ClassificationRaw(RES_LICENSE, 0.99f, "OCR confirmed license")
                         t.contains("1000") || t.contains("руда") || t.contains("ore") -> 
                             return ClassificationRaw(RES_ORE, 0.99f, "OCR confirmed ore")
                         t.contains("token") || t.contains("mm ") || t.contains(" mm") -> {
@@ -415,6 +427,8 @@ object OpenCvVisionScanner {
                         t.contains("сапфир") || t.contains("sapphire") -> return ClassificationRaw(RES_SAPPHIRE, 0.98f, "OCR confirmed sapphire")
                         t.contains("рубин") || t.contains("ruby") -> return ClassificationRaw(RES_RUBY, 0.98f, "OCR confirmed ruby")
                         t.contains("изумруд") || t.contains("emerald") -> return ClassificationRaw(RES_EMERALD, 0.98f, "OCR confirmed emerald")
+                        t.contains("эль") || t.contains("ale") || t.contains("beer") -> return ClassificationRaw(RES_ALE, 0.98f, "OCR confirmed ale")
+                        t.contains("свиток") || t.contains("scroll") -> return ClassificationRaw(RES_SCROLL, 0.98f, "OCR confirmed scroll")
                     }
                 }
             }
@@ -444,44 +458,49 @@ object OpenCvVisionScanner {
             val redMask1 = Mat()
             val redMask2 = Mat()
             val redFull = Mat()
-            Core.inRange(iconHsv, Scalar(0.0, 100.0, 80.0), Scalar(6.0, 255.0, 255.0), redMask1)
-            Core.inRange(iconHsv, Scalar(170.0, 100.0, 80.0), Scalar(180.0, 255.0, 255.0), redMask2)
+            Core.inRange(iconHsv, Scalar(0.0, 95.0, 75.0), Scalar(7.0, 255.0, 255.0), redMask1)
+            Core.inRange(iconHsv, Scalar(168.0, 95.0, 75.0), Scalar(180.0, 255.0, 255.0), redMask2)
             Core.bitwise_or(redMask1, redMask2, redFull)
             val redPixels = Core.countNonZero(redFull)
 
             // 2. Emerald Green (Изумруд)
             val greenMask = Mat()
-            Core.inRange(iconHsv, Scalar(36.0, 90.0, 80.0), Scalar(85.0, 255.0, 255.0), greenMask)
+            Core.inRange(iconHsv, Scalar(36.0, 85.0, 75.0), Scalar(85.0, 255.0, 255.0), greenMask)
             val greenPixels = Core.countNonZero(greenMask)
 
             // 3. Cobalt Blue Sapphire (Сапфир)
             val blueMask = Mat()
-            Core.inRange(iconHsv, Scalar(95.0, 100.0, 80.0), Scalar(135.0, 255.0, 255.0), blueMask)
+            Core.inRange(iconHsv, Scalar(95.0, 95.0, 75.0), Scalar(135.0, 255.0, 255.0), blueMask)
             val bluePixels = Core.countNonZero(blueMask)
 
             // 4. Pure Golden Yellow (Золото / ММТ)
             val goldYellowMask = Mat()
-            Core.inRange(iconHsv, Scalar(21.0, 110.0, 110.0), Scalar(38.0, 255.0, 255.0), goldYellowMask)
+            Core.inRange(iconHsv, Scalar(18.0, 110.0, 120.0), Scalar(38.0, 255.0, 255.0), goldYellowMask)
             val goldYellowPixels = Core.countNonZero(goldYellowMask)
 
             // 5. Copper Terracotta Orange (Медь)
             val copperOrangeMask = Mat()
-            Core.inRange(iconHsv, Scalar(7.0, 85.0, 85.0), Scalar(19.0, 255.0, 240.0), copperOrangeMask)
+            Core.inRange(iconHsv, Scalar(6.0, 80.0, 80.0), Scalar(17.0, 255.0, 230.0), copperOrangeMask)
             val copperOrangePixels = Core.countNonZero(copperOrangeMask)
 
             // 6. Silver Cyan-Metallic / Slate-Grey Ingot (Серебро / СМТ)
             val silverCyanMask = Mat()
-            Core.inRange(iconHsv, Scalar(85.0, 15.0, 100.0), Scalar(135.0, 80.0, 240.0), silverCyanMask)
+            Core.inRange(iconHsv, Scalar(85.0, 10.0, 110.0), Scalar(135.0, 70.0, 245.0), silverCyanMask)
             val silverCyanPixels = Core.countNonZero(silverCyanMask)
 
             val silverMetallicMask = Mat()
-            Core.inRange(iconHsv, Scalar(0.0, 0.0, 95.0), Scalar(180.0, 45.0, 230.0), silverMetallicMask)
+            Core.inRange(iconHsv, Scalar(0.0, 0.0, 110.0), Scalar(180.0, 45.0, 240.0), silverMetallicMask)
             val silverMetallicPixels = Core.countNonZero(silverMetallicMask)
 
             // 7. Ore Dark Minerals (Руда)
             val oreDarkMask = Mat()
-            Core.inRange(iconHsv, Scalar(0.0, 0.0, 30.0), Scalar(180.0, 60.0, 120.0), oreDarkMask)
+            Core.inRange(iconHsv, Scalar(0.0, 0.0, 30.0), Scalar(180.0, 60.0, 115.0), oreDarkMask)
             val oreDarkPixels = Core.countNonZero(oreDarkMask)
+
+            // 8. White Cloth / Shroud (Белое покрывало)
+            val whiteShroudMask = Mat()
+            Core.inRange(iconHsv, Scalar(0.0, 0.0, 205.0), Scalar(180.0, 40.0, 255.0), whiteShroudMask)
+            val whiteShroudPixels = Core.countNonZero(whiteShroudMask)
 
             val totalIconPixels = (iconRect.width * iconRect.height).toDouble()
 
@@ -493,6 +512,7 @@ object OpenCvVisionScanner {
             val silverCyanRatio = silverCyanPixels / totalIconPixels
             val silverMetallicRatio = silverMetallicPixels / totalIconPixels
             val oreDarkRatio = oreDarkPixels / totalIconPixels
+            val whiteShroudRatio = whiteShroudPixels / totalIconPixels
 
             val isCircular = checkCircularity(iconRgb)
 
@@ -502,7 +522,7 @@ object OpenCvVisionScanner {
 
             // Decision Tree Classifier
             // 1. Red Check: Prohibition Sign (🚫) vs Red Ruby (Рубин)
-            if (redRatio > 0.06) {
+            if (redRatio > 0.05) {
                 if (isRedRingProhibition(iconRgb, redFull)) {
                     detected = RES_BOUGHT
                     confidence = min(0.99f, (redRatio * 4.0f).toFloat())
@@ -525,14 +545,14 @@ object OpenCvVisionScanner {
                 confidence = min(0.99f, (greenRatio * 3.5f).toFloat())
                 reason = "Emerald green gemstone reflection"
             }
-            // 4. Copper Bar (Медь - terracotta ingot)
-            else if (copperRatio > 0.08) {
-                detected = RES_COPPER
-                confidence = min(0.98f, (copperRatio * 3.5f).toFloat())
-                reason = "Copper terracotta metallic ingot"
+            // 4. White Shroud (Белое покрывало)
+            else if (whiteShroudRatio > 0.22) {
+                detected = RES_WHITE_SHROUD
+                confidence = 0.94f
+                reason = "White drape cloth texture"
             }
             // 5. Gold Ingot (Золото) vs MMT Gold Token
-            else if (goldRatio > 0.09) {
+            else if (goldRatio > 0.08) {
                 if (isCircular && !isRoughRockTexture(iconRgb)) {
                     detected = RES_MMT_GOLD
                     confidence = 0.95f
@@ -547,14 +567,14 @@ object OpenCvVisionScanner {
                     reason = "Gold ingot bar"
                 }
             }
-            // 6. Ore (Руда - Dark faceted mineral stone / 1000 quantity)
-            else if (oreDarkRatio > 0.12 || isRoughRockTexture(iconRgb)) {
-                detected = RES_ORE
-                confidence = 0.96f
-                reason = "Dark grey mineral rock facets"
+            // 6. Copper Bar (Медь - terracotta ingot)
+            else if (copperRatio > 0.07) {
+                detected = RES_COPPER
+                confidence = min(0.98f, (copperRatio * 3.5f).toFloat())
+                reason = "Copper terracotta metallic ingot"
             }
             // 7. Silver Bar (Серебро) vs SMT Silver Token (СМТ)
-            else if (silverCyanRatio > 0.06 || silverMetallicRatio > 0.18) {
+            else if (silverCyanRatio > 0.05 || silverMetallicRatio > 0.15) {
                 if (isCircular && !isRoughRockTexture(iconRgb)) {
                     detected = RES_SMT_SILVER
                     confidence = 0.96f
@@ -565,11 +585,17 @@ object OpenCvVisionScanner {
                     reason = "Silver metallic ingot bar"
                 }
             }
-            // 8. Scroll (Свиток)
+            // 8. Scroll (Свиток) or License (Лицензия)
             else if (hasScrollParchmentGeometry(iconHsv)) {
                 detected = RES_SCROLL
                 confidence = 0.92f
                 reason = "Parchment scroll contour"
+            }
+            // 9. Ore (Руда - Dark faceted mineral stone)
+            else if (oreDarkRatio > 0.14 || isRoughRockTexture(iconRgb)) {
+                detected = RES_ORE
+                confidence = 0.96f
+                reason = "Dark grey mineral rock facets"
             } else {
                 // Fallback
                 if (isCircular && !isRoughRockTexture(iconRgb)) {
@@ -587,7 +613,7 @@ object OpenCvVisionScanner {
             redMask1.release(); redMask2.release(); redFull.release()
             greenMask.release(); blueMask.release()
             copperOrangeMask.release(); goldYellowMask.release()
-            silverCyanMask.release(); silverMetallicMask.release(); oreDarkMask.release()
+            silverCyanMask.release(); silverMetallicMask.release(); oreDarkMask.release(); whiteShroudMask.release()
             iconHsv.release(); iconRgb.release(); hsv.release(); mat.release()
 
             return ClassificationRaw(
@@ -672,24 +698,32 @@ object OpenCvVisionScanner {
             if (w < 10 || h < 10) return false
 
             // In prohibition sign 🚫:
-            // 1. Off-center quadrant points inside the ring have NO red and are dark
-            // 2. Ruby is a solid faceted diamond filled with red and bright glints
-            val checkP1 = redMask.get((h * 0.28).toInt(), (w * 0.28).toInt())
-            val checkP2 = redMask.get((h * 0.72).toInt(), (w * 0.72).toInt())
-            val hasDarkHoles = (checkP1 != null && checkP1[0] == 0.0) && (checkP2 != null && checkP2[0] == 0.0)
+            // 1. The outer shape is a distinct circular ring, and the center core (30%x30%) has mostly dark open background.
+            // 2. Ruby is a solid faceted crystal whose center core is heavily filled with red facets and specular bright glints (V > 215).
+            val coreX = (w * 0.35).toInt()
+            val coreY = (h * 0.35).toInt()
+            val coreW = (w * 0.30).toInt().coerceAtLeast(2)
+            val coreH = (h * 0.30).toInt().coerceAtLeast(2)
 
-            // Also check ring circularity of red mask
-            val contours = ArrayList<org.opencv.core.MatOfPoint>()
-            val hierarchy = Mat()
-            Imgproc.findContours(redMask.clone(), contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE)
-            
-            // Prohibition sign has an inner hole in the red mask (hierarchy has child/parent levels)
-            val hasInnerHole = hierarchy.rows() > 0 && hierarchy.cols() > 1
-            hierarchy.release()
+            val coreRedMat = Mat(redMask, Rect(coreX, coreY, coreW, coreH))
+            val coreRedPixels = Core.countNonZero(coreRedMat)
+            val coreRedRatio = coreRedPixels.toDouble() / (coreW * coreH)
+            coreRedMat.release()
 
-            return hasDarkHoles || hasInnerHole
+            // In prohibition sign, the core only contains a thin diagonal line (coreRedRatio < 0.38).
+            // In Ruby, the core is densely packed with red crystal facets (coreRedRatio >= 0.45).
+            if (coreRedRatio >= 0.42) {
+                return false // Solid ruby!
+            }
+
+            // Check if center quadrant off-axis spots have dark gaps
+            val checkP1 = redMask.get((h * 0.32).toInt(), (w * 0.68).toInt()) // top-right quadrant
+            val checkP2 = redMask.get((h * 0.68).toInt(), (w * 0.32).toInt()) // bottom-left quadrant
+            val hasOpenHoles = (checkP1 != null && checkP1[0] == 0.0) && (checkP2 != null && checkP2[0] == 0.0)
+
+            return hasOpenHoles || (coreRedRatio < 0.35)
         } catch (e: Throwable) {
-            return true
+            return false
         }
     }
 
@@ -749,19 +783,19 @@ object OpenCvVisionScanner {
             val gray = Mat()
             Imgproc.cvtColor(rgbMat, gray, Imgproc.COLOR_RGB2GRAY)
             val edges = Mat()
-            Imgproc.Canny(gray, edges, 50.0, 150.0)
+            Imgproc.Canny(gray, edges, 60.0, 180.0)
             val edgePixels = Core.countNonZero(edges)
             val ratio = edgePixels.toDouble() / (gray.rows() * gray.cols())
             gray.release()
             edges.release()
-            return ratio > 0.14
+            return ratio > 0.16
         } catch (e: Throwable) {
             return false
         }
     }
 
     /**
-     * Extracts quantity string and numeric double from slot.
+     * Extracts quantity string and numeric double from slot with resource-aware fallback.
      */
     private fun extractQuantityForSlot(
         slotCrop: Bitmap,
@@ -769,25 +803,31 @@ object OpenCvVisionScanner {
         slotTop: Int,
         slotRight: Int,
         slotBottom: Int,
-        ocrLines: List<com.google.mlkit.vision.text.Text.Line>
+        ocrLines: List<com.google.mlkit.vision.text.Text.Line>,
+        resourceName: String
     ): Pair<String, Double?> {
         val slotH = slotBottom - slotTop
-        // The quantity badge is strictly located at the bottom 35% of the slot (Y: 65%..105%)
-        val numSearchTop = (slotTop + slotH * 0.60f).toInt()
-        val numSearchBottom = slotBottom + 30
+        // The quantity badge is located at the lower half of the slot (Y: 55%..105%)
+        val numSearchTop = (slotTop + slotH * 0.50f).toInt()
+        val numSearchBottom = slotBottom + 35
 
         for (line in ocrLines) {
             val box = line.boundingBox ?: continue
             val cx = box.centerX()
             val cy = box.centerY()
 
-            if (cx in (slotLeft - 10)..(slotRight + 10) && cy in numSearchTop..numSearchBottom) {
+            if (cx in (slotLeft - 15)..(slotRight + 15) && cy in numSearchTop..numSearchBottom) {
                 val raw = line.text.trim()
                 val rawLower = raw.lowercase()
                 
                 // Skip words from coin emboss or game labels
                 if (rawLower.contains("token") || rawLower.contains("hunt") || rawLower.contains("mine") || rawLower.contains("mm")) {
                     continue
+                }
+
+                // Handle 1000 ore variations
+                if (rawLower.contains("1000") || rawLower.contains("1ooo") || rawLower.contains("1o00") || rawLower.contains("10oo")) {
+                    return Pair("1000.0", 1000.0)
                 }
 
                 val normalized = raw.replace(',', '.')
@@ -802,8 +842,15 @@ object OpenCvVisionScanner {
             }
         }
 
-        // 2. Default fallback based on common game values
-        return Pair("1.0", 1.0)
+        // 2. Intelligent Default fallback based on specific resource type
+        return when (resourceName) {
+            RES_ORE -> Pair("1000.0", 1000.0)
+            RES_COPPER, RES_SILVER -> Pair("10.0", 10.0)
+            RES_GOLD -> Pair("5.0", 5.0)
+            RES_SAPPHIRE, RES_RUBY, RES_EMERALD, RES_SMT_SILVER, RES_MMT_GOLD,
+            RES_GNOME, RES_WHITE_SHROUD, RES_LICENSE, RES_ALE, RES_SCROLL -> Pair("1.0", 1.0)
+            else -> Pair("1.0", 1.0)
+        }
     }
 
     /**
