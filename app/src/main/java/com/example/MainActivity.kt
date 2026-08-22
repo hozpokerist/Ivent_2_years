@@ -459,7 +459,7 @@ fun DashboardTab(
         // Target Settings
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("🎯 Настройка целей для покупки (Множественный выбор)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("🎯 Настройка целей для покупки", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
                 // Super Priority Banner (Gnome, White Shroud, License)
                 Surface(
@@ -507,6 +507,39 @@ fun DashboardTab(
                     onUpdateConfig(config.copy(targetItemName = currentList.joinToString(", ")))
                 }
 
+                // Quick Action Presets
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = { onUpdateConfig(config.copy(targetItemName = "")) },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
+                        Text("⭐ Только раритеты", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+                    FilledTonalButton(
+                        onClick = { 
+                            val currentList = config.targetItemName.split(",", ";", "/").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                            if (!currentList.any { it.equals("ММТ", ignoreCase = true) }) {
+                                currentList.add("ММТ")
+                            }
+                            onUpdateConfig(config.copy(targetItemName = currentList.joinToString(", "), minMmtQuantity = 100.0))
+                        },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
+                        Text("🟡 + ММТ (от 100 шт)", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+                    OutlinedButton(
+                        onClick = { onUpdateConfig(config.copy(targetItemName = "")) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("Очистить", fontSize = 11.sp)
+                    }
+                }
+
                 OutlinedTextField(
                     value = config.targetItemName,
                     onValueChange = { onUpdateConfig(config.copy(targetItemName = it)) },
@@ -518,94 +551,80 @@ fun DashboardTab(
                     supportingText = {
                         Text(
                             text = if (selectedTargets.isEmpty()) 
-                                "⚡ Сейчас покупаются ТОЛЬКО: Гном, Белое покрывало, Лицензия (остальное игнорируется)"
-                                else "⚡ Выбрано для покупки: ${selectedTargets.size} доп. ресурсов + (Гном, Покрывало, Лицензия)",
+                                "⚡ Сейчас покупаются ТОЛЬКО: Гном, Белое покрывало, Лицензия (все обычные ресурсы пропускаются)"
+                                else "⚡ Выбрано для покупки: ${selectedTargets.joinToString(", ")} + (Гном, Покрывало, Лицензия)",
                             color = if (selectedTargets.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 )
 
+                // MMT Minimum Quantity Condition
+                if (selectedTargets.any { it.contains("ММТ", ignoreCase = true) || it.contains("MMT", ignoreCase = true) } || true) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("🟡 Правило для монеты ММТ (жёлтый MM Token):", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                            OutlinedTextField(
+                                value = config.minMmtQuantity.toInt().toString(),
+                                onValueChange = { onUpdateConfig(config.copy(minMmtQuantity = it.toDoubleOrNull() ?: 100.0)) },
+                                label = { Text("Минимальный размер ММТ для покупки (шт)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                supportingText = {
+                                    Text("Покупать ММТ только если его размер >= ${config.minMmtQuantity.toInt()} шт. (Если 1.0 или 10.0 — покупка НЕ совершается)")
+                                }
+                            )
+                        }
+                    }
+                }
+
                 // Quick item presets with MULTI-SELECT support
                 val primaryResources = listOf("Медь", "Серебро", "Золото", "Руда")
-                val superRareItems = listOf("Гном", "Белое покрывало", "Лицензия")
-                val gemResources = listOf("Изумруд", "Рубин", "Сапфир", "ММТ", "СМТ", "Свиток", "Эль")
+                val gemResources = listOf("ММТ (≥100)", "СМТ", "Изумруд", "Рубин", "Сапфир", "Свиток", "Эль")
 
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Нажмите для выбора/снятия (Мультивыбор):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(
-                                onClick = { onUpdateConfig(config.copy(targetItemName = "")) },
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text("Снять все", fontSize = 11.sp)
-                            }
-                            TextButton(
-                                onClick = { onUpdateConfig(config.copy(targetItemName = primaryResources.joinToString(", "))) },
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text("Базовые (4)", fontSize = 11.sp)
-                            }
-                        }
+                    Text("Нажмите на чип для включения/выключения:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+
+                    // Row 1: MMT & SMT & Gems
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val mmtSelected = selectedTargets.any { it.equals("ММТ", ignoreCase = true) || it.equals("ММТ (≥100)", ignoreCase = true) }
+                        FilterChip(
+                            selected = mmtSelected,
+                            onClick = { toggleTarget("ММТ") },
+                            leadingIcon = if (mmtSelected) {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                            } else {
+                                { Text("🟡", fontSize = 11.sp) }
+                            },
+                            label = { Text("ММТ (≥${config.minMmtQuantity.toInt()})", fontSize = 11.sp, fontWeight = if (mmtSelected) FontWeight.Bold else FontWeight.Normal) }
+                        )
+
+                        val smtSelected = selectedTargets.any { it.equals("СМТ", ignoreCase = true) }
+                        FilterChip(
+                            selected = smtSelected,
+                            onClick = { toggleTarget("СМТ") },
+                            leadingIcon = if (smtSelected) {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                            } else null,
+                            label = { Text("СМТ", fontSize = 11.sp, fontWeight = if (smtSelected) FontWeight.Bold else FontWeight.Normal) }
+                        )
+
+                        val goldSelected = selectedTargets.any { it.equals("Золото", ignoreCase = true) }
+                        FilterChip(
+                            selected = goldSelected,
+                            onClick = { toggleTarget("Золото") },
+                            leadingIcon = if (goldSelected) {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                            } else null,
+                            label = { Text("Золото", fontSize = 11.sp, fontWeight = if (goldSelected) FontWeight.Bold else FontWeight.Normal) }
+                        )
                     }
 
-                    // Row 1: Primary Resources
+                    // Row 2: Secondary items
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        primaryResources.forEach { item ->
-                            val isSelected = selectedTargets.any { it.equals(item, ignoreCase = true) }
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { toggleTarget(item) },
-                                leadingIcon = if (isSelected) {
-                                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                                } else null,
-                                label = { Text(item, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) }
-                            )
-                        }
-                    }
-
-                    // Row 2: Super Priority Items (Always active, marked with star)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        superRareItems.forEach { item ->
-                            val isSelected = selectedTargets.any { it.equals(item, ignoreCase = true) }
-                            FilterChip(
-                                selected = true, // Always bought unconditionally
-                                onClick = {
-                                    toggleTarget(item)
-                                },
-                                leadingIcon = {
-                                    Text("⭐", fontSize = 12.sp)
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
-                                ),
-                                label = { Text(item, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                            )
-                        }
-                    }
-
-                    // Row 3 & 4: Gems & Special Items
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        gemResources.take(4).forEach { item ->
-                            val isSelected = selectedTargets.any { it.equals(item, ignoreCase = true) }
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { toggleTarget(item) },
-                                leadingIcon = if (isSelected) {
-                                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                                } else null,
-                                label = { Text(item, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) }
-                            )
-                        }
-                    }
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        gemResources.drop(4).forEach { item ->
+                        listOf("Медь", "Серебро", "Руда", "Свиток").forEach { item ->
                             val isSelected = selectedTargets.any { it.equals(item, ignoreCase = true) }
                             FilterChip(
                                 selected = isSelected,

@@ -403,12 +403,16 @@ object OpenCvVisionScanner {
     ): ClassificationRaw {
         try {
             // Check OCR text inside slot bounds for tokens, rare items, or 1000 quantity
+            var ocrFoundToken = false
             for (line in ocrLines) {
                 val box = line.boundingBox ?: continue
                 val cx = box.centerX()
                 val cy = box.centerY()
                 if (cx in slotLeft..slotRight && cy in slotTop..slotBottom) {
                     val t = line.text.lowercase().trim()
+                    if (t.contains("token") || t.contains("toke") || t.contains("mm") || t.contains("смт") || t.contains("ммт")) {
+                        ocrFoundToken = true
+                    }
                     when {
                         t.contains("гном") || t.contains("gnome") || t.contains("dwarf") -> 
                             return ClassificationRaw(RES_GNOME, 0.99f, "OCR confirmed gnome")
@@ -418,12 +422,6 @@ object OpenCvVisionScanner {
                             return ClassificationRaw(RES_LICENSE, 0.99f, "OCR confirmed license")
                         t.contains("1000") || t.contains("руда") || t.contains("ore") -> 
                             return ClassificationRaw(RES_ORE, 0.99f, "OCR confirmed ore")
-                        t.contains("token") || t.contains("mm ") || t.contains(" mm") -> {
-                            return ClassificationRaw(RES_SMT_SILVER, 0.98f, "OCR MM token silver")
-                        }
-                        t.contains("медь") || t.contains("copper") -> return ClassificationRaw(RES_COPPER, 0.98f, "OCR confirmed copper")
-                        t.contains("золот") || t.contains("gold") -> return ClassificationRaw(RES_GOLD, 0.98f, "OCR confirmed gold")
-                        t.contains("серебр") || t.contains("silver") -> return ClassificationRaw(RES_SILVER, 0.98f, "OCR confirmed silver")
                         t.contains("сапфир") || t.contains("sapphire") -> return ClassificationRaw(RES_SAPPHIRE, 0.98f, "OCR confirmed sapphire")
                         t.contains("рубин") || t.contains("ruby") -> return ClassificationRaw(RES_RUBY, 0.98f, "OCR confirmed ruby")
                         t.contains("изумруд") || t.contains("emerald") -> return ClassificationRaw(RES_EMERALD, 0.98f, "OCR confirmed emerald")
@@ -455,11 +453,12 @@ object OpenCvVisionScanner {
 
             // Measure Color Proportions in OpenCV
             // 1. Pure Crimson Red for Prohibition Sign (🚫) or Ruby (Рубин)
+            // Note: S >= 120 and H strictly in [0..4] and [172..180] to strictly reject terracotta copper!
             val redMask1 = Mat()
             val redMask2 = Mat()
             val redFull = Mat()
-            Core.inRange(iconHsv, Scalar(0.0, 95.0, 75.0), Scalar(7.0, 255.0, 255.0), redMask1)
-            Core.inRange(iconHsv, Scalar(168.0, 95.0, 75.0), Scalar(180.0, 255.0, 255.0), redMask2)
+            Core.inRange(iconHsv, Scalar(0.0, 120.0, 90.0), Scalar(4.0, 255.0, 255.0), redMask1)
+            Core.inRange(iconHsv, Scalar(172.0, 120.0, 90.0), Scalar(180.0, 255.0, 255.0), redMask2)
             Core.bitwise_or(redMask1, redMask2, redFull)
             val redPixels = Core.countNonZero(redFull)
 
@@ -475,21 +474,21 @@ object OpenCvVisionScanner {
 
             // 4. Pure Golden Yellow (Золото / ММТ)
             val goldYellowMask = Mat()
-            Core.inRange(iconHsv, Scalar(18.0, 110.0, 120.0), Scalar(38.0, 255.0, 255.0), goldYellowMask)
+            Core.inRange(iconHsv, Scalar(18.0, 100.0, 110.0), Scalar(38.0, 255.0, 255.0), goldYellowMask)
             val goldYellowPixels = Core.countNonZero(goldYellowMask)
 
             // 5. Copper Terracotta Orange (Медь)
             val copperOrangeMask = Mat()
-            Core.inRange(iconHsv, Scalar(6.0, 80.0, 80.0), Scalar(17.0, 255.0, 230.0), copperOrangeMask)
+            Core.inRange(iconHsv, Scalar(7.0, 85.0, 85.0), Scalar(17.0, 255.0, 230.0), copperOrangeMask)
             val copperOrangePixels = Core.countNonZero(copperOrangeMask)
 
             // 6. Silver Cyan-Metallic / Slate-Grey Ingot (Серебро / СМТ)
             val silverCyanMask = Mat()
-            Core.inRange(iconHsv, Scalar(85.0, 10.0, 110.0), Scalar(135.0, 70.0, 245.0), silverCyanMask)
+            Core.inRange(iconHsv, Scalar(85.0, 10.0, 100.0), Scalar(140.0, 75.0, 245.0), silverCyanMask)
             val silverCyanPixels = Core.countNonZero(silverCyanMask)
 
             val silverMetallicMask = Mat()
-            Core.inRange(iconHsv, Scalar(0.0, 0.0, 110.0), Scalar(180.0, 45.0, 240.0), silverMetallicMask)
+            Core.inRange(iconHsv, Scalar(0.0, 0.0, 100.0), Scalar(180.0, 48.0, 245.0), silverMetallicMask)
             val silverMetallicPixels = Core.countNonZero(silverMetallicMask)
 
             // 7. Ore Dark Minerals (Руда)
@@ -508,15 +507,16 @@ object OpenCvVisionScanner {
             val silverMetallicRatio = silverMetallicPixels / totalIconPixels
             val oreDarkRatio = oreDarkPixels / totalIconPixels
 
-            val isCircular = checkCircularity(iconRgb)
+            val isCircular = checkCircularity(iconRgb) || ocrFoundToken
+            val isRedSign = redRatio > 0.035 && isRedRingProhibition(iconRgb, redFull)
 
             var detected = RES_UNKNOWN
             var confidence = 0.6f
             var reason = ""
 
             // Decision Tree Classifier
-            // 1. Red Check: In Resource Hunt grid, red ring/slash is ALWAYS Prohibition Sign (🚫 - Выкупленный лот)
-            if (redRatio > 0.025) {
+            // 1. Red Check: In Resource Hunt grid, crimson red ring/slash is Prohibition Sign (🚫 - Выкупленный лот)
+            if (isRedSign) {
                 detected = RES_BOUGHT
                 confidence = min(0.99f, (redRatio * 4.0f).toFloat())
                 reason = "Red prohibition ring/slash"
@@ -534,10 +534,10 @@ object OpenCvVisionScanner {
                 reason = "Emerald green gemstone reflection"
             }
             // 4. Gold Ingot (Золото) vs MMT Gold Token
-            else if (goldRatio > 0.06) {
+            else if (goldRatio > 0.06 && goldRatio > copperRatio) {
                 if (isCircular && !isRoughRockTexture(iconRgb)) {
                     detected = RES_MMT_GOLD
-                    confidence = 0.95f
+                    confidence = 0.96f
                     reason = "Circular gold MM token"
                 } else if (hasBeerMugGeometry(iconHsv, iconRgb)) {
                     detected = RES_ALE
@@ -550,13 +550,13 @@ object OpenCvVisionScanner {
                 }
             }
             // 5. Copper Bar (Медь - terracotta ingot)
-            else if (copperRatio > 0.05) {
+            else if (copperRatio > 0.08 && copperRatio > goldRatio && copperRatio > silverCyanRatio) {
                 detected = RES_COPPER
                 confidence = min(0.98f, (copperRatio * 3.5f).toFloat())
                 reason = "Copper terracotta metallic ingot"
             }
             // 6. Silver Bar (Серебро) vs SMT Silver Token (СМТ)
-            else if (silverCyanRatio > 0.04 || silverMetallicRatio > 0.12) {
+            else if ((silverCyanRatio > 0.04 || silverMetallicRatio > 0.10) && copperRatio < 0.09) {
                 if (isCircular && !isRoughRockTexture(iconRgb)) {
                     detected = RES_SMT_SILVER
                     confidence = 0.96f
@@ -574,20 +574,20 @@ object OpenCvVisionScanner {
                 reason = "Parchment scroll contour"
             }
             // 8. Ore (Руда - Dark faceted mineral stone)
-            else if (oreDarkRatio > 0.14 || isRoughRockTexture(iconRgb)) {
+            else if (oreDarkRatio > 0.15 || isRoughRockTexture(iconRgb)) {
                 detected = RES_ORE
                 confidence = 0.96f
                 reason = "Dark grey mineral rock facets"
             } else {
                 // Fallback: Check if silver or copper or ore
-                if (silverMetallicRatio > 0.08 || silverCyanRatio > 0.03) {
-                    detected = RES_SILVER
-                    confidence = 0.88f
-                    reason = "Silver metallic reflection"
-                } else if (copperRatio > 0.03) {
+                if (copperRatio > 0.07 && copperRatio > silverCyanRatio) {
                     detected = RES_COPPER
                     confidence = 0.88f
-                    reason = "Copper tone"
+                    reason = "Copper terracotta tone"
+                } else if (silverMetallicRatio > 0.08 || silverCyanRatio > 0.03) {
+                    detected = if (isCircular) RES_SMT_SILVER else RES_SILVER
+                    confidence = 0.88f
+                    reason = "Silver metallic reflection"
                 } else {
                     detected = RES_ORE
                     confidence = 0.85f

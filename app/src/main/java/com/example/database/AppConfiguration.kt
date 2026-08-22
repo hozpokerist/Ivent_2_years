@@ -27,6 +27,7 @@ data class AppConfiguration(
     val clickRandomizationRadiusPx: Float = 6f,
     val gridCloseDelayMs: Long = 1000L, // Задержка перед повторным нажатием на '2' после закрытия крестиком 'X' (мс)
     val gridOpenDelayMs: Long = 2000L, // Задержка на открытие/прогрузку сетки после нажатия на '2' (мс)
+    val minMmtQuantity: Double = 100.0, // Минимальный размер лота ММТ для покупки (покупать только если >= 100)
     val verboseOcrLogging: Boolean = false,
     val calibratedOreX: Float? = null,
     val calibratedOreY: Float? = null,

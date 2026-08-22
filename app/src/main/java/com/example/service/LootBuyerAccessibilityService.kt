@@ -2286,10 +2286,11 @@ class LootBuyerAccessibilityService : AccessibilityService() {
             .filter { it.isNotEmpty() }
 
         // Helper function to check if a slot resource matches any of the user targets
-        fun isTargetMatch(slotName: String): Boolean {
+        fun isTargetMatch(slot: OpenCvVisionScanner.SlotAnalysisResult): Boolean {
+            val slotName = slot.resourceName
             if (rawTargets.isEmpty()) return false
             val sLower = slotName.lowercase()
-            return rawTargets.any { target ->
+            val matchesName = rawTargets.any { target ->
                 sLower.contains(target) ||
                 (target.contains("гном") && slotName.contains("Гном")) ||
                 (target.contains("покрывал") && slotName.contains("Белое покрывало")) ||
@@ -2307,6 +2308,23 @@ class LootBuyerAccessibilityService : AccessibilityService() {
                 (target.contains("сапфир") && slotName.contains("Сапфир")) ||
                 (target.contains("рубин") && slotName.contains("Рубин"))
             }
+
+            if (!matchesName) return false
+
+            // Special Condition for MMT (Жёлтый MM Token):
+            // Покупать ММТ ТОЛЬКО если количество >= minMmtQuantity (по умолчанию 100 шт).
+            // Если размер меньше (например 1.0 или 10.0), НЕ покупаем!
+            if (slotName == OpenCvVisionScanner.RES_MMT_GOLD || slotName.contains("ММТ") || slotName.contains("MMT")) {
+                val qty = slot.quantityValue ?: (slot.quantityText.toDoubleOrNull() ?: 1.0)
+                if (qty < config.minMmtQuantity) {
+                    AutoBuyerLogs.addLog("⏩ [ПРОПУСК ММТ] Слот #${slot.slotIndex + 1}: Найдено ММТ ($qty шт.), но меньше требуемых ${config.minMmtQuantity.toInt()} ММТ. Не покупаем.")
+                    return false
+                } else {
+                    AutoBuyerLogs.addLog("🟡 [ЦЕЛЬ ММТ] Слот #${slot.slotIndex + 1}: Найдено ММТ ($qty шт. >= ${config.minMmtQuantity.toInt()})! Подходит для выкупа.")
+                }
+            }
+
+            return true
         }
 
         // 1. Mandatory Super-Priority Items: "Гном", "Белое покрывало", "Лицензия" are ALWAYS bought if available
@@ -2320,7 +2338,7 @@ class LootBuyerAccessibilityService : AccessibilityService() {
 
         // 2. Target item(s) selected by user
         val targetMatchingSlots = report.detectedSlots.filter { slot ->
-            !slot.isBought && isTargetMatch(slot.resourceName)
+            !slot.isBought && isTargetMatch(slot)
         }
 
         val matchingAvailableSlots = if (superPrioritySlots.isNotEmpty()) {
